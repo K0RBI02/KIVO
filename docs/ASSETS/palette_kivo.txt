@@ -1,0 +1,29 @@
+/* Coolors Exported Palette - https://coolors.co/eae4e3-714b41-171212 */
+
+- CSV
+
+eae4e3,714b41,171212
+
+- With #
+
+#eae4e3, #714b41, #171212
+
+- Array
+
+["eae4e3","714b41","171212"]
+
+- Object
+
+{"Alabaster Grey":"eae4e3","Mauve Bark":"714b41","Coffee Bean":"171212"}
+
+- Extended Array
+
+[{"name":"Alabaster Grey","hex":"eae4e3","rgb":[234,228,227],"cmyk":[0,3,3,8],"hsb":[9,3,92],"hsl":[9,14,90],"lab":[91,2,1]},{"name":"Mauve Bark","hex":"714b41","rgb":[113,75,65],"cmyk":[0,34,42,56],"hsb":[13,42,44],"hsl":[13,27,35],"lab":[36,15,13]},{"name":"Coffee Bean","hex":"171212","rgb":[23,18,18],"cmyk":[0,22,22,91],"hsb":[0,22,9],"hsl":[0,12,8],"lab":[6,2,1]}]
+
+- XML
+
+<palette>
+  <color name="Alabaster Grey" hex="eae4e3" r="234" g="228" b="227" />
+  <color name="Mauve Bark" hex="714b41" r="113" g="75" b="65" />
+  <color name="Coffee Bean" hex="171212" r="23" g="18" b="18" />
+</palette>
