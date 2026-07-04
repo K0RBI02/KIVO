@@ -1,6 +1,6 @@
 blank_issues_enabled: false
 
 contact_links:
-  - name: General Discussion
+  - name: 💬 GitHub Discussions
     url: https://github.com/korbi20/KIVO/discussions
-    about: Please use GitHub Discussions for questions and ideas.
+    about: Ask questions, share ideas, and discuss KIVO with the community.
