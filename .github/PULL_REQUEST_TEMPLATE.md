@@ -1,4 +1,8 @@
-# Pull Request
+# 🚀 Pull Request
+
+Thank you for contributing to **KIVO**!
+
+---
 
 ## Summary
 
@@ -11,27 +15,29 @@ Describe your changes.
 - [ ] Feature
 - [ ] Bug Fix
 - [ ] Refactor
+- [ ] Performance Improvement
 - [ ] Documentation
-- [ ] Performance
+- [ ] Tests
 - [ ] Other
 
 ---
 
 ## Checklist
 
-- [ ] Code builds successfully
-- [ ] Tests pass
-- [ ] Documentation has been updated
-- [ ] No breaking changes introduced
+- [ ] The project builds successfully.
+- [ ] Existing functionality was not broken.
+- [ ] Documentation has been updated (if required).
+- [ ] New code follows the project's coding style.
+- [ ] Tests were added or updated (if applicable).
 
 ---
 
 ## Screenshots
 
-If applicable, add screenshots.
+If applicable, include screenshots.
 
 ---
 
 ## Additional Notes
 
-Anything else reviewers should know?
+Anything reviewers should know?
