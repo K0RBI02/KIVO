@@ -1,27 +1,33 @@
 ---
-name: Feature Request
+name: ✨ Feature Request
 about: Suggest a new feature or improvement.
 title: "[Feature]: "
-labels: enhancement
+labels: ["feature"]
 assignees: ""
+---
+
+# ✨ Feature Request
+
+Thank you for helping shape the future of **KIVO**!
+
 ---
 
 ## Summary
 
 Describe your idea.
 
-## Problem
+## Motivation
 
-What problem does this solve?
+Why is this feature useful?
 
 ## Proposed Solution
 
-Describe your proposed solution.
+Describe how you imagine the feature.
 
-## Alternatives Considered
+## Alternatives
 
-Have you considered any alternatives?
+Have you considered other approaches?
 
-## Additional Information
+## Additional Notes
 
-Anything else?
+Anything else you'd like to add?
