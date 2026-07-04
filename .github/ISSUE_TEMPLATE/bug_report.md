@@ -1,14 +1,22 @@
 ---
-name: Bug Report
-about: Report a bug or unexpected behavior.
+name: 🐛 Bug Report
+about: Report a bug or unexpected behavior in KIVO.
 title: "[Bug]: "
-labels: bug
+labels: ["bug"]
 assignees: ""
+---
+
+# 🐛 Bug Report
+
+Thank you for helping improve **KIVO**!
+
+Please provide as much detail as possible so we can reproduce and resolve the issue.
+
 ---
 
 ## Description
 
-A clear and concise description of the bug.
+A clear and concise description of the problem.
 
 ## Steps to Reproduce
 
@@ -18,22 +26,22 @@ A clear and concise description of the bug.
 
 ## Expected Behavior
 
-What did you expect to happen?
+What should happen?
 
 ## Actual Behavior
 
-What actually happened?
+What happened instead?
 
 ## Screenshots
 
-If applicable, add screenshots.
+If applicable, attach screenshots or recordings.
 
 ## Environment
 
 - OS:
 - Browser:
-- Version:
+- KIVO Version:
 
 ## Additional Information
 
-Anything else that may help.
+Anything else that may help us?
