@@ -1,19 +1,25 @@
 ---
-name: Documentation
-about: Improve or fix documentation.
+name: 📚 Documentation
+about: Report missing or incorrect documentation.
 title: "[Docs]: "
-labels: documentation
+labels: ["documentation"]
 assignees: ""
+---
+
+# 📚 Documentation
+
+Help us improve KIVO's documentation.
+
 ---
 
 ## Description
 
-Describe the documentation issue.
+What is missing or incorrect?
 
-## Suggested Changes
+## Suggested Improvement
 
-What should be changed?
+How should it be documented?
 
-## Additional Notes
+## Additional Information
 
 Anything else?
