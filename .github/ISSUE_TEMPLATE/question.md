@@ -1,18 +1,20 @@
 ---
-name: Question
+name: ❓ Question
 about: Ask a question about KIVO.
 title: "[Question]: "
-labels: question
+labels: ["question"]
 assignees: ""
 ---
 
-## Question
+# ❓ Question
 
-Ask your question.
+## Your Question
+
+Ask anything related to KIVO.
 
 ## Context
 
-Provide any relevant context.
+Provide any context that helps us answer.
 
 ## Additional Information
 
