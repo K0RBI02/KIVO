@@ -34,3 +34,18 @@ class Normalizer:
                 return word[: -len(suffix)]
 
         return word
+
+
+class NormalizerStage:
+    """
+    Adapter: macht aus JEDEM Objekt mit .normalize(word) eine Pipeline-Stufe.
+    Damit kann engine.py wahlweise den Heuristik-Normalizer oder einen
+    echten Sprach-Stemmer (siehe language.py) in dieselbe Pipeline stecken,
+    ohne die Pipeline selbst anzufassen.
+    """
+
+    def __init__(self, normalizer) -> None:
+        self._normalizer = normalizer
+
+    def execute(self, context) -> None:
+        context.normalized_tokens = [self._normalizer.normalize(t) for t in context.filtered_tokens]

@@ -21,6 +21,7 @@ from uuid import UUID
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from search.engine import KnowledgeEngine
+from search import language
 
 engine = KnowledgeEngine(data_dir="kivo_data")
 
@@ -88,6 +89,18 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json([entry_to_json(e) for e in engine.recent(limit)])
             return
 
+        if parts == ["api", "export"]:
+            self._send_json(engine.export_all())
+            return
+
+        if parts == ["api", "language"]:
+            self._send_json({
+                "current": engine.language,
+                "available": engine.available_languages(),
+                "snowball_available": language.snowball_available(),
+            })
+            return
+
         if parts == ["api", "search"]:
             q = unquote(query.get("q", [""])[0])
             results = engine.search(q)
@@ -127,11 +140,26 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": True})
             return
 
+        if parts == ["api", "import"]:
+            count = engine.import_entries(data.get("entries", []))
+            self._send_json({"imported": count})
+            return
+
+        if parts == ["api", "language"]:
+            engine.set_language(data.get("language", "auto"))
+            self._send_json({"current": engine.language})
+            return
+
         self._send_json({"error": "unknown route"}, 404)
 
     def do_DELETE(self) -> None:
         parsed = urlparse(self.path)
         parts = [p for p in parsed.path.split("/") if p]
+
+        if parts == ["api", "entries"]:
+            engine.clear_all()
+            self._send_json({"ok": True})
+            return
 
         if len(parts) == 3 and parts[:2] == ["api", "entries"]:
             engine.delete(UUID(parts[2]))

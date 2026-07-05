@@ -2,26 +2,34 @@
 KIVO Search Engine
 Scorer
 
-Prioritaet laut Spec (Reihenfolge = Gewichtung, absteigend):
+Prioritaet laut Spec (absteigend):
   1. Titel
   2. Inhalt
   3. erkannte Keywords (Konzept-Bonus)
-  4. Fuzzy Matching
+  4. Fuzzy Matching / Prefix
   5. Synonyme
-  6. manuelle Links       (hier nicht relevant, betrifft link_suggester.py)
+  6. manuelle Links       (betrifft link_suggester.py, nicht hier)
   7. Benutzerverhalten    (Bonus - darf NIE einen besseren Treffer ueberholen)
   8. Aktualitaet          (Bonus)
+
+WICHTIG: Zaehlungen werden log-gedaempft (log1p), sonst gewinnt automatisch
+die laengste Notiz mit den meisten Wortwiederholungen, unabhaengig von
+Relevanz. Ein Wort 1x vs 2x im Titel soll einen kleinen, keinen linearen
+Unterschied machen.
 """
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 
 TITLE_WEIGHT = 5.0
 CONTENT_WEIGHT = 2.0
+PREFIX_WEIGHT = 1.8
 FUZZY_WEIGHT = 1.5
 SYNONYM_WEIGHT = 1.0
-RECENCY_MAX_BONUS = 0.5   # klein: darf nie einen inhaltlich besseren Treffer schlagen
+PHRASE_BONUS = 3.0
+RECENCY_MAX_BONUS = 0.5
 
 
 class Scorer:
@@ -33,15 +41,17 @@ class Scorer:
         for entry_id, candidate in context.candidates.items():
             score = 0.0
 
-            score += candidate["title_hits"] * TITLE_WEIGHT
-            score += candidate["content_hits"] * CONTENT_WEIGHT
+            score += math.log1p(candidate["title_hits"]) * TITLE_WEIGHT
+            score += math.log1p(candidate["content_hits"]) * CONTENT_WEIGHT
+            score += len(candidate["prefix_hits"]) * PREFIX_WEIGHT
+            score += len(candidate["synonym_hits"]) * SYNONYM_WEIGHT
 
             for _term, _matched, ratio in candidate["fuzzy_hits"]:
                 score += ratio * FUZZY_WEIGHT
 
-            score += len(candidate["synonym_hits"]) * SYNONYM_WEIGHT
+            if candidate.get("phrase_match"):
+                score += PHRASE_BONUS
 
-            # Konzept-Bonus: Query-Begriffe, die die Engine als "Konzept" kennt
             concept_bonus = 0.0
             title_lower = candidate["entry"].title.lower()
             content_lower = candidate["entry"].content.lower()

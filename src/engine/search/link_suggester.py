@@ -16,15 +16,17 @@ from .graph import KnowledgeGraph
 from .pipeline.tokenizer import Tokenizer
 from .pipeline.normalizer import Normalizer
 from .pipeline.stopwords import STOPWORDS
+from .text_cleaning import strip_media
 
 
-def suggest_links(entry: Entry, all_entries: tuple[Entry, ...], analysis, graph: KnowledgeGraph, max_total: int = 3) -> list[Link]:
+def suggest_links(entry: Entry, all_entries: tuple[Entry, ...], analysis, graph: KnowledgeGraph, max_total: int = 3, stopwords: set[str] | None = None, normalizer=None) -> list[Link]:
     tokenizer = Tokenizer()
-    normalizer = Normalizer()
+    active_normalizer = normalizer if normalizer is not None else Normalizer()
+    active_stopwords = stopwords if stopwords is not None else STOPWORDS
 
-    text = f"{entry.title} {entry.content}"
-    tokens = [t for t in tokenizer.tokenize(text) if t not in STOPWORDS]
-    concept_terms = {normalizer.normalize(t) for t in tokens}
+    text = strip_media(f"{entry.title} {entry.content}")
+    tokens = [t for t in tokenizer.tokenize(text) if t not in active_stopwords]
+    concept_terms = {active_normalizer.normalize(t) for t in tokens}
     concept_terms = {t for t in concept_terms if analysis.is_known_concept(t)}
 
     # score pro anderem Entry = Anzahl gemeinsamer entdeckter Konzepte
@@ -34,9 +36,9 @@ def suggest_links(entry: Entry, all_entries: tuple[Entry, ...], analysis, graph:
         if other.id == entry.id:
             continue
 
-        other_text = f"{other.title} {other.content}"
-        other_tokens = [t for t in tokenizer.tokenize(other_text) if t not in STOPWORDS]
-        other_terms = {normalizer.normalize(t) for t in other_tokens}
+        other_text = strip_media(f"{other.title} {other.content}")
+        other_tokens = [t for t in tokenizer.tokenize(other_text) if t not in active_stopwords]
+        other_terms = {active_normalizer.normalize(t) for t in other_tokens}
 
         shared = concept_terms & other_terms
         if shared:

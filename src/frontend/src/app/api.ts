@@ -29,6 +29,12 @@ export interface ApiLink {
   score: number;
 }
 
+export interface ApiLanguageInfo {
+  current: string;
+  available: string[];
+  snowball_available: boolean;
+}
+
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
     throw new Error(`KIVO API error: ${res.status}`);
@@ -86,6 +92,44 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, entry_id: entryId }),
+    });
+  },
+
+  async addManualLink(entryId: string, targetId: string): Promise<void> {
+    await fetch(`${API_BASE}/api/link/${entryId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_id: targetId }),
+    });
+  },
+
+  async exportAll(): Promise<ApiEntry[]> {
+    return json(await fetch(`${API_BASE}/api/export`));
+  },
+
+  async importEntries(entries: { title: string; content: string }[]): Promise<{ imported: number }> {
+    return json(
+      await fetch(`${API_BASE}/api/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entries }),
+      })
+    );
+  },
+
+  async deleteAll(): Promise<void> {
+    await fetch(`${API_BASE}/api/entries`, { method: "DELETE" });
+  },
+
+  async getLanguage(): Promise<ApiLanguageInfo> {
+    return json(await fetch(`${API_BASE}/api/language`));
+  },
+
+  async setLanguage(lang: string): Promise<void> {
+    await fetch(`${API_BASE}/api/language`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ language: lang }),
     });
   },
 };

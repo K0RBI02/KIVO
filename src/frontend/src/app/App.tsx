@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Pencil, Settings, ArrowLeft, X, Eye, FileText, Keyboard } from "lucide-react";
+import { Pencil, Settings, ArrowLeft, X, Eye, FileText, Keyboard, Link2 } from "lucide-react";
 import { marked } from "marked";
-import { api, ApiEntry, ApiSearchResult } from "./api";
+import { api, ApiEntry, ApiSearchResult, ApiLanguageInfo } from "./api";
 
 // ── Markdown config ───────────────────────────────────────────
 marked.setOptions({ breaks: true });
@@ -36,7 +36,17 @@ function KivoIcon({ size = 32, color = "#111110" }: { size?: number; color?: str
 
 function MarkdownContent({ content }: { content: string }) {
   const html = useMemo(() => marked(content) as string, [content]);
-  return <div className="prose-kivo" dangerouslySetInnerHTML={{ __html: html }} />;
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const hljs = (window as any).hljs;
+    if (!hljs || !ref.current) return;
+    ref.current.querySelectorAll("pre code").forEach((block) => {
+      hljs.highlightElement(block as HTMLElement);
+    });
+  }, [html]);
+
+  return <div ref={ref} className="prose-kivo" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 // ── Screens / navigation ───────────────────────────────────────
@@ -348,7 +358,35 @@ function DetailScreen({
   const [query, setQuery] = useState("");
   const { results: searchResults } = useEngineSearch(query);
 
+  const [addingLink, setAddingLink] = useState(false);
+  const [linkQuery, setLinkQuery] = useState("");
+  const { results: linkResults } = useEngineSearch(linkQuery);
+
   useSwipeBack(onBack);
+
+  const refreshLinks = useCallback(async () => {
+    const links = await api.linksFor(entryId);
+    let manualIdx = 0;
+    const items = await Promise.all(
+      links.map(async (link) => {
+        const target = await api.get(link.target_id);
+        const item: RelatedItem = {
+          entry: target,
+          kind: link.kind,
+          index: link.kind === "manual" ? ++manualIdx : 0,
+        };
+        return item;
+      })
+    );
+    setRelated(items);
+  }, [entryId]);
+
+  const handleAddLink = useCallback(async (targetId: string) => {
+    await api.addManualLink(entryId, targetId);
+    setAddingLink(false);
+    setLinkQuery("");
+    await refreshLinks();
+  }, [entryId, refreshLinks]);
 
   useEffect(() => {
     let cancelled = false;
@@ -359,29 +397,13 @@ function DetailScreen({
       const e = await api.get(entryId);
       if (cancelled) return;
       setEntry(e);
-
-      const links = await api.linksFor(entryId);
-      if (cancelled) return;
-
-      let manualIdx = 0;
-      const items = await Promise.all(
-        links.map(async (link) => {
-          const target = await api.get(link.target_id);
-          const item: RelatedItem = {
-            entry: target,
-            kind: link.kind,
-            index: link.kind === "manual" ? ++manualIdx : 0,
-          };
-          return item;
-        })
-      );
-      if (!cancelled) setRelated(items);
+      await refreshLinks();
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [entryId]);
+  }, [entryId, refreshLinks]);
 
   if (!entry) {
     return <div className="min-h-screen bg-[#fafaf8]" />;
@@ -443,6 +465,49 @@ function DetailScreen({
             <p className="text-[13px] text-[#8c8c88]">Keine verwandten Eintraege gefunden.</p>
           )}
         </ul>
+
+        <div className="mt-5">
+          {!addingLink ? (
+            <button
+              onClick={() => setAddingLink(true)}
+              className="flex items-center gap-1.5 text-[13px] text-[#8c8c88] hover:text-[#111110] transition-colors min-h-[44px]"
+            >
+              <Link2 size={13} strokeWidth={1.5} />
+              Link hinzufügen
+            </button>
+          ) : (
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <SearchBar value={linkQuery} onChange={setLinkQuery} />
+                </div>
+                <button
+                  onClick={() => { setAddingLink(false); setLinkQuery(""); }}
+                  className="flex items-center justify-center w-8 h-8 rounded-full hover:bg-[#111110]/6 text-[#c8c8c4] hover:text-[#111110] transition-colors flex-shrink-0"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              {linkQuery.trim() && (
+                <ul className="mt-3 space-y-2">
+                  {linkResults
+                    .filter(({ entry: r }) => r.id !== entry.id && !related.some((rel) => rel.entry.id === r.id))
+                    .slice(0, 5)
+                    .map(({ entry: r }) => (
+                      <li key={r.id}>
+                        <button
+                          onClick={() => handleAddLink(r.id)}
+                          className="text-left text-[13px] text-[#111110] hover:opacity-50 transition-opacity min-h-[36px] flex items-center"
+                        >
+                          {r.title}
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <FixedNav onEdit={onEdit} onSettings={onSettings} />
@@ -450,7 +515,52 @@ function DetailScreen({
   );
 }
 
-// ── Edit screen ───────────────────────────────────────────────
+// ── Auto-Erkennung beim Einfuegen (Code + Bilder) ──────────────
+//
+// Punkt 4 (Code-Erkennung) + Punkt 5 (Bilder) aus der Anforderung:
+// Kein manuelles ``` noetig - erkennt eingefuegten Code selbst und
+// verpackt ihn, erkennt eingefuegte Bilder und baut Markdown-Syntax.
+
+function looksLikeCode(text: string): boolean {
+  const lines = text.split("\n");
+  if (lines.length < 2 && text.length < 40) return false;
+
+  const signals = [
+    /^[\s]*[\$#>]\s/m,                     // Shell-Prompt: $ ..., # ..., > ...
+    /\b(sudo|systemctl|docker|apt|dnf|yum|curl|wget|ssh|chmod|chown|git)\b/,
+    /[{};]\s*$/m,                          // Code-typische Zeilenenden
+    /^\s*(function|const|let|var|def|class|import|from|return)\b/m,
+    /^\s{2,}\S/m,                          // Einrueckung
+    /=>|::|->/,
+  ];
+
+  const hits = signals.filter((re) => re.test(text)).length;
+  return hits >= 2;
+}
+
+function guessLanguage(text: string): string {
+  if (/^\s*[\{\[]/.test(text.trim())) {
+    try { JSON.parse(text); return "json"; } catch { /* not json */ }
+  }
+  if (/\b(def |import |print\(|self\.)\b/.test(text)) return "python";
+  if (/\b(const |let |=>|function )\b/.test(text)) return "javascript";
+  if (/^\s*[\w.-]+:\s/m.test(text) && !/;/.test(text)) return "yaml";
+  if (/\b(server|location|proxy_pass)\b/.test(text)) return "nginx";
+  if (/\bFROM\s+\w+/.test(text)) return "dockerfile";
+  return "bash";
+}
+
+function wrapAsCodeBlock(text: string): string {
+  const lang = guessLanguage(text);
+  const trimmed = text.replace(/\n+$/, "");
+  return "```" + lang + "\n" + trimmed + "\n```";
+}
+
+function insertAtCursor(currentValue: string, start: number, end: number, insertText: string): { value: string; cursor: number } {
+  const value = currentValue.slice(0, start) + insertText + currentValue.slice(end);
+  return { value, cursor: start + insertText.length };
+}
+
 
 function EditScreen({
   entryId,
@@ -465,6 +575,7 @@ function EditScreen({
   const [content, setContent] = useState("");
   const [preview, setPreview] = useState(false);
   const [loaded, setLoaded] = useState(entryId === null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useSwipeBack(onBack);
 
@@ -495,6 +606,49 @@ function EditScreen({
     (window as any).__kivoSave = handleSave;
     return () => { delete (window as any).__kivoSave; };
   }, [handleSave]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    // 1) Bild eingefuegt (Screenshot, kopiertes Bild, etc.)
+    const imageItem = Array.from(e.clipboardData.items).find((it) => it.type.startsWith("image/"));
+    if (imageItem) {
+      e.preventDefault();
+      const file = imageItem.getAsFile();
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const { value, cursor } = insertAtCursor(
+          content,
+          textarea.selectionStart,
+          textarea.selectionEnd,
+          `\n![](${dataUrl})\n`
+        );
+        setContent(value);
+        requestAnimationFrame(() => textarea.setSelectionRange(cursor, cursor));
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    // 2) Text eingefuegt, der wie Code aussieht -> automatisch als Codeblock wrappen
+    const text = e.clipboardData.getData("text/plain");
+    if (text && looksLikeCode(text)) {
+      e.preventDefault();
+      const wrapped = wrapAsCodeBlock(text);
+      const { value, cursor } = insertAtCursor(
+        content,
+        textarea.selectionStart,
+        textarea.selectionEnd,
+        `\n${wrapped}\n`
+      );
+      setContent(value);
+      requestAnimationFrame(() => textarea.setSelectionRange(cursor, cursor));
+    }
+    // sonst: normales Einfuegen, Browser macht das von selbst (kein preventDefault)
+  }, [content]);
 
   if (!loaded) {
     return <div className="min-h-screen bg-[#fafaf8]" />;
@@ -546,9 +700,11 @@ function EditScreen({
               style={{ letterSpacing: "-0.02em", fontFamily: "'DM Sans', sans-serif" }}
             />
             <textarea
+              ref={textareaRef}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder={"Write in Markdown…\n\n# Heading\n**bold**, *italic*, `code`\n- list item"}
+              onPaste={handlePaste}
+              placeholder={"Write in Markdown…\n\n# Heading\n**bold**, *italic*, `code`\n- list item\n\nCode und Bilder kannst du einfach einfuegen (Strg/Cmd+V) - wird automatisch erkannt."}
               rows={18}
               className="w-full bg-transparent outline-none text-[15px] sm:text-[16px] text-[#3d3d3a] placeholder:text-[#c8c8c4] leading-[1.75] resize-none"
               style={{ fontFamily: "'DM Sans', sans-serif" }}
@@ -562,6 +718,32 @@ function EditScreen({
 
 // ── Settings screen ───────────────────────────────────────────
 
+// ── Appearance (Theme / Font size) ─────────────────────────────
+//
+// Bewusst localStorage (kein Artifact-Sandbox-Kontext, das ist eine
+// echte, eigenstaendige Vite-App im Browser des Nutzers).
+
+type ThemePref = "light" | "dark" | "system";
+type FontSizePref = "small" | "medium" | "large";
+
+const FONT_SIZES: Record<FontSizePref, string> = { small: "14px", medium: "15px", large: "17px" };
+
+function applyTheme(pref: ThemePref) {
+  const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const dark = pref === "dark" || (pref === "system" && systemDark);
+  document.documentElement.classList.toggle("dark", dark);
+}
+
+function applyFontSize(pref: FontSizePref) {
+  document.documentElement.style.setProperty("--font-size", FONT_SIZES[pref]);
+}
+
+function loadAppearancePrefs(): { theme: ThemePref; fontSize: FontSizePref } {
+  const theme = (localStorage.getItem("kivo-theme") as ThemePref) || "light";
+  const fontSize = (localStorage.getItem("kivo-fontsize") as FontSizePref) || "medium";
+  return { theme, fontSize };
+}
+
 const SHORTCUTS = [
   { keys: "⌘K / /", action: "Focus search" },
   { keys: "⌘N", action: "New entry" },
@@ -572,6 +754,73 @@ const SHORTCUTS = [
 
 function SettingsScreen({ onBack }: { onBack: () => void }) {
   useSwipeBack(onBack);
+
+  const [theme, setTheme] = useState<ThemePref>("light");
+  const [fontSize, setFontSize] = useState<FontSizePref>("medium");
+  const [langInfo, setLangInfo] = useState<ApiLanguageInfo | null>(null);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const prefs = loadAppearancePrefs();
+    setTheme(prefs.theme);
+    setFontSize(prefs.fontSize);
+    api.getLanguage().then(setLangInfo).catch(() => {});
+  }, []);
+
+  const changeTheme = (pref: ThemePref) => {
+    setTheme(pref);
+    localStorage.setItem("kivo-theme", pref);
+    applyTheme(pref);
+  };
+
+  const changeFontSize = (pref: FontSizePref) => {
+    setFontSize(pref);
+    localStorage.setItem("kivo-fontsize", pref);
+    applyFontSize(pref);
+  };
+
+  const changeLanguage = async (lang: string) => {
+    await api.setLanguage(lang);
+    setLangInfo((prev) => (prev ? { ...prev, current: lang } : prev));
+  };
+
+  const handleExport = async () => {
+    const entries = await api.exportAll();
+    const blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `kivo-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const items = Array.isArray(parsed) ? parsed : [];
+      const { imported } = await api.importEntries(items);
+      setImportStatus(`${imported} Eintraege importiert.`);
+    } catch {
+      setImportStatus("Import fehlgeschlagen - ist die Datei gueltiges JSON?");
+    } finally {
+      e.target.value = "";
+      setTimeout(() => setImportStatus(null), 4000);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    if (!window.confirm("Wirklich ALLE Eintraege unwiderruflich loeschen?")) return;
+    setDeleting(true);
+    await api.deleteAll();
+    setDeleting(false);
+  };
+
   return (
     <div className="min-h-screen bg-[#fafaf8] px-5 sm:px-10 md:px-20 lg:px-40">
       <div className="max-w-2xl mx-auto">
@@ -583,26 +832,114 @@ function SettingsScreen({ onBack }: { onBack: () => void }) {
         </div>
 
         <div className="space-y-10">
-          {[
-            { label: "Account", items: ["Sign out", "Change email", "Change password"] },
-            { label: "Appearance", items: ["Light mode", "System default", "Font size"] },
-            { label: "Data", items: ["Export all entries", "Import entries", "Delete all data"] },
-          ].map((group) => (
-            <div key={group.label}>
-              <p className="text-[11px] text-[#8c8c88] uppercase tracking-[0.1em] mb-4" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                {group.label}
-              </p>
-              <ul className="space-y-1">
-                {group.items.map((item) => (
-                  <li key={item}>
-                    <button className="text-[15px] text-[#111110] hover:opacity-50 transition-opacity text-left min-h-[44px] flex items-center w-full">
-                      {item}
-                    </button>
-                  </li>
+          {/* Account - ehrlich statt vorgetaeuscht: KIVO läuft lokal, es gibt kein Konto */}
+          <div>
+            <p className="text-[11px] text-[#8c8c88] uppercase tracking-[0.1em] mb-4" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              Account
+            </p>
+            <p className="text-[13px] text-[#8c8c88] leading-relaxed">
+              KIVO läuft lokal auf deinem Gerät - es gibt kein Konto und keinen Login.
+              Deine Daten liegen ausschließlich in <code className="text-[12px] bg-[#f2f2f0] px-1 py-0.5 rounded">kivo_data/entries.json</code>.
+            </p>
+          </div>
+
+          {/* Appearance */}
+          <div>
+            <p className="text-[11px] text-[#8c8c88] uppercase tracking-[0.1em] mb-4" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              Appearance
+            </p>
+            <div className="flex items-center justify-between min-h-[44px]">
+              <span className="text-[15px] text-[#111110]">Theme</span>
+              <div className="flex gap-1">
+                {(["light", "dark", "system"] as ThemePref[]).map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => changeTheme(opt)}
+                    className={`text-[12px] px-2.5 py-1 rounded transition-colors ${
+                      theme === opt ? "bg-[#111110] text-[#fafaf8]" : "text-[#8c8c88] hover:text-[#111110] bg-[#f2f2f0]"
+                    }`}
+                  >
+                    {opt === "light" ? "Light" : opt === "dark" ? "Dark" : "System"}
+                  </button>
                 ))}
-              </ul>
+              </div>
             </div>
-          ))}
+            <div className="flex items-center justify-between min-h-[44px]">
+              <span className="text-[15px] text-[#111110]">Font size</span>
+              <div className="flex gap-1">
+                {(["small", "medium", "large"] as FontSizePref[]).map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => changeFontSize(opt)}
+                    className={`text-[12px] px-2.5 py-1 rounded transition-colors ${
+                      fontSize === opt ? "bg-[#111110] text-[#fafaf8]" : "text-[#8c8c88] hover:text-[#111110] bg-[#f2f2f0]"
+                    }`}
+                  >
+                    {opt === "small" ? "S" : opt === "medium" ? "M" : "L"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Language / Suche */}
+          <div>
+            <p className="text-[11px] text-[#8c8c88] uppercase tracking-[0.1em] mb-4" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              Search language
+            </p>
+            <div className="flex items-center justify-between min-h-[44px]">
+              <span className="text-[15px] text-[#111110]">Sprache</span>
+              <div className="flex gap-1">
+                {(langInfo?.available ?? ["auto", "de", "en"]).map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => changeLanguage(opt)}
+                    className={`text-[12px] px-2.5 py-1 rounded transition-colors ${
+                      langInfo?.current === opt ? "bg-[#111110] text-[#fafaf8]" : "text-[#8c8c88] hover:text-[#111110] bg-[#f2f2f0]"
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {langInfo && !langInfo.snowball_available && (
+              <p className="text-[12px] text-[#8c8c88] mt-2 leading-relaxed">
+                Fuer praeziseres Stemming optional installieren:{" "}
+                <code className="bg-[#f2f2f0] px-1 py-0.5 rounded">pip install snowballstemmer</code>
+              </p>
+            )}
+          </div>
+
+          {/* Data */}
+          <div>
+            <p className="text-[11px] text-[#8c8c88] uppercase tracking-[0.1em] mb-4" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              Data
+            </p>
+            <ul className="space-y-1">
+              <li>
+                <button onClick={handleExport} className="text-[15px] text-[#111110] hover:opacity-50 transition-opacity text-left min-h-[44px] flex items-center w-full">
+                  Export all entries
+                </button>
+              </li>
+              <li>
+                <button onClick={() => fileInputRef.current?.click()} className="text-[15px] text-[#111110] hover:opacity-50 transition-opacity text-left min-h-[44px] flex items-center w-full">
+                  Import entries
+                </button>
+                <input ref={fileInputRef} type="file" accept="application/json" onChange={handleImportFile} className="hidden" />
+              </li>
+              <li>
+                <button
+                  onClick={handleDeleteAll}
+                  disabled={deleting}
+                  className="text-[15px] text-[#d4183d] hover:opacity-60 transition-opacity text-left min-h-[44px] flex items-center w-full disabled:opacity-40"
+                >
+                  {deleting ? "Loesche…" : "Delete all data"}
+                </button>
+              </li>
+            </ul>
+            {importStatus && <p className="text-[12px] text-[#8c8c88] mt-1">{importStatus}</p>}
+          </div>
 
           <div>
             <p className="text-[11px] text-[#8c8c88] uppercase tracking-[0.1em] mb-4 flex items-center gap-1.5" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
@@ -667,6 +1004,13 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const navigate = useCallback((next: Screen) => setScreen(next), []);
+
+  // Gespeicherte Darstellung sofort anwenden, bevor irgendwas gerendert wird
+  useEffect(() => {
+    const prefs = loadAppearancePrefs();
+    applyTheme(prefs.theme);
+    applyFontSize(prefs.fontSize);
+  }, []);
 
   useEffect(() => {
     if (screen.type !== "loading") return;
