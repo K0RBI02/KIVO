@@ -239,3 +239,7 @@ src/frontend/dist/
 .env.local
 .env.*.local
 
+src/frontend/package-lock.json
+
+src/frontend/src-tauri/gen/schemas/
+src/frontend/src-tauri/Cargo.lock
