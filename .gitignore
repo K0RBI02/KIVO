@@ -216,3 +216,26 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ==========================================
+# Tauri & Rust Build-Dateien (WICHTIG!)
+# ==========================================
+**/target/
+src/frontend/src-tauri/target/
+*.pdb
+*.rlib
+*.exe
+*.dll
+*.so
+*.dylib
+
+# ==========================================
+# Frontend & Node.js (Vite/React/Vue)
+# ==========================================
+node_modules/
+src/frontend/node_modules/
+dist/
+src/frontend/dist/
+.env.local
+.env.*.local
+
