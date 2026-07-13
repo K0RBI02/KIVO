@@ -24,15 +24,11 @@ use tauri::Manager;
 struct EnginePocess(Mutex<Option<Child>>);
 
 fn spawn_engine() -> Option<Child> {
-    // Pfad relativ zu src-tauri/ - passt zur aktuellen Projektstruktur
-    // (src/frontend/src-tauri -> ../../engine/webapp/server.py)
     let engine_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
         .join("..")
         .join("engine");
 
-    // Probiert mehrere uebliche Namen der Reihe nach, statt fest an einen
-    // bestimmten Rechner/Nutzernamen gebunden zu sein (portabel).
     let candidates: &[&str] = if cfg!(windows) {
         &["python", "python3", "py"]
     } else {
@@ -45,14 +41,32 @@ fn spawn_engine() -> Option<Child> {
             .current_dir(&engine_dir)
             .spawn();
 
-        if let Ok(child) = result {
-            return Some(child);
+        let mut child = match result {
+            Ok(child) => child,
+            Err(_) => continue,
+        };
+
+        // Kurzer Health-Check: sofortiger Crash (Port belegt,
+        // fehlendes Modul, ...) soll nicht als Erfolg durchgehen.
+        std::thread::sleep(std::time::Duration::from_millis(400));
+
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                eprintln!(
+                    "[KIVO] '{candidate}' ist sofort beendet (status: {status:?}) - versuche naechsten Kandidaten."
+                );
+                continue;
+            }
+            Ok(None) => return Some(child), // laeuft noch -> gutes Zeichen
+            Err(err) => {
+                eprintln!("[KIVO] Konnte Engine-Status nicht pruefen: {err}");
+                return Some(child);
+            }
         }
     }
 
     eprintln!(
-        "[KIVO] Engine konnte nicht gestartet werden - keiner von {:?} im PATH gefunden.",
-        candidates
+        "[KIVO] Engine konnte nicht gestartet werden - keiner von {candidates:?} im PATH gefunden oder alle sofort abgestuerzt."
     );
     None
 }

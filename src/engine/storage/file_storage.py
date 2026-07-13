@@ -3,7 +3,9 @@ KIVO Engine
 File Storage
 """
 
-from __future__ import annotations
+import os
+import tempfile
+import contextlib
 
 from pathlib import Path
 from typing import Any
@@ -22,7 +24,19 @@ class FileStorage:
     def save(self, name: str, data: Any) -> Path:
         file_path = self.path / f"{name}.json"
         serialized = self.serializer.serialize(data)
-        file_path.write_text(serialized, encoding="utf-8")
+
+        fd, tmp_name = tempfile.mkstemp(dir=self.path, prefix=f".{name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+                tmp_file.write(serialized)
+                tmp_file.flush()
+                os.fsync(tmp_file.fileno())
+            os.replace(tmp_name, file_path)  # atomar auf Windows & Unix
+        except Exception:
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(tmp_name)
+            raise
+
         return file_path
 
     def load(self, name: str) -> Any:

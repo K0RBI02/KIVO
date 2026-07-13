@@ -152,6 +152,7 @@ function useSwipeBack(onBack: () => void, enabled = true) {
 function useEngineSearch(query: string) {
   const [results, setResults] = useState<ApiSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -161,25 +162,25 @@ function useEngineSearch(query: string) {
       try {
         if (!query.trim()) {
           const recent = await api.recent(5);
-          if (!cancelled) setResults(recent.map((entry) => ({ entry, score: 0 })));
+          if (!cancelled) { setResults(recent.map((entry) => ({ entry, score: 0 }))); setError(null); }
         } else {
           const found = await api.search(query);
-          if (!cancelled) setResults(found);
+          if (!cancelled) { setResults(found); setError(null); }
         }
-      } catch {
-        if (!cancelled) setResults([]);
+      } catch (err) {
+        if (!cancelled) {
+          setResults([]);
+          setError(err instanceof Error ? err.message : "Unbekannter Fehler");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }, 150);
 
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
+    return () => { cancelled = true; clearTimeout(t); };
   }, [query]);
 
-  return { results, loading };
+  return { results, loading, error };
 }
 
 // ── Search bar ────────────────────────────────────────────────
@@ -291,7 +292,7 @@ function SearchScreen({
   searchRef: React.RefObject<HTMLInputElement | null>;
 }) {
   const [query, setQuery] = useState("");
-  const { results } = useEngineSearch(query);
+  const { results, error } = useEngineSearch(query);
 
   return (
     <div className="min-h-screen bg-[#fafaf8] px-5 sm:px-10 md:px-20 lg:px-40">
@@ -304,7 +305,9 @@ function SearchScreen({
 
       <div className="max-w-2xl mx-auto">
         <SearchBar value={query} onChange={setQuery} large inputRef={searchRef} />
-
+        {error && (
+          <p className="text-[13px] text-[#d4183d] mb-4">{error}</p>
+        )}
         <ul className="mt-8 sm:mt-10 space-y-6 sm:space-y-7">
           {results.length === 0 && (
             <p className="text-[#8c8c88] text-[14px]">No entries found.</p>
@@ -388,22 +391,37 @@ function DetailScreen({
     await refreshLinks();
   }, [entryId, refreshLinks]);
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     setEntry(null);
     setRelated([]);
+    setLoadError(null);
 
     (async () => {
-      const e = await api.get(entryId);
-      if (cancelled) return;
-      setEntry(e);
-      await refreshLinks();
+      try {
+        const e = await api.get(entryId);
+        if (cancelled) return;
+        setEntry(e);
+        await refreshLinks();
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : "Eintrag konnte nicht geladen werden.");
+        }
+      }
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [entryId, refreshLinks]);
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-[#fafaf8] flex items-center justify-center px-5">
+        <p className="text-[14px] text-[#d4183d] text-center">{loadError}</p>
+      </div>
+    );
+  }
 
   if (!entry) {
     return <div className="min-h-screen bg-[#fafaf8]" />;

@@ -23,8 +23,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from search.engine import KnowledgeEngine
 from search import language
 
+
+# Exception classes used by the error handler
+class EntityNotFoundError(Exception):
+    """Raised when an entity is not found."""
+    pass
+
+
+class DomainError(Exception):
+    """Raised when a domain constraint is violated."""
+    pass
+
+
 engine = KnowledgeEngine(data_dir="kivo_data")
 
+ALLOWED_ORIGINS = {
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "tauri://localhost",
+    "https://tauri.localhost",
+}
 
 def entry_to_json(entry) -> dict:
     return {
@@ -42,7 +60,12 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+
+        origin = self.headers.get("Origin")
+        if origin in ALLOWED_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Content-Length", str(len(body)))
@@ -58,7 +81,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         self._send_json({})
 
-    def do_GET(self) -> None:
+    def _do_GET(self) -> None:
         parsed = urlparse(self.path)
         parts = [p for p in parsed.path.split("/") if p]
         query = parse_qs(parsed.query)
@@ -112,7 +135,7 @@ class Handler(BaseHTTPRequestHandler):
 
         self._send_json({"error": "unknown route"}, 404)
 
-    def do_POST(self) -> None:
+    def _do_POST(self) -> None:
         parsed = urlparse(self.path)
         parts = [p for p in parsed.path.split("/") if p]
         data = self._read_json()
@@ -152,7 +175,7 @@ class Handler(BaseHTTPRequestHandler):
 
         self._send_json({"error": "unknown route"}, 404)
 
-    def do_DELETE(self) -> None:
+    def _do_DELETE(self) -> None:
         parsed = urlparse(self.path)
         parts = [p for p in parsed.path.split("/") if p]
 
@@ -171,6 +194,36 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args) -> None:
         sys.stderr.write("%s - %s\n" % (self.address_string(), format % args))
 
+    def do_GET(self) -> None:
+        try:
+            self._do_GET()
+        except Exception as exc:
+            self._handle_error(exc)
+
+    def do_POST(self) -> None:
+        try:
+            self._do_POST()
+        except Exception as exc:
+            self._handle_error(exc)
+
+    def do_DELETE(self) -> None:
+        try:
+            self._do_DELETE()
+        except Exception as exc:
+            self._handle_error(exc)
+
+    def _handle_error(self, exc: Exception) -> None:
+        if isinstance(exc, (ValueError, KeyError, json.JSONDecodeError)):
+            status = 400
+        elif isinstance(exc, EntityNotFoundError):
+            status = 404
+        elif isinstance(exc, DomainError):
+            status = 409
+        else:
+            status = 500
+
+        sys.stderr.write(f"[KIVO API] {type(exc).__name__}: {exc}\n")
+        self._send_json({"error": str(exc) or type(exc).__name__}, status)
 
 def main(port: int = 8420) -> None:
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
