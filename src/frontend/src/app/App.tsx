@@ -6,6 +6,83 @@ import { api, ApiEntry, ApiSearchResult, ApiLanguageInfo } from "./api";
 // ── Markdown config ───────────────────────────────────────────
 marked.setOptions({ breaks: true });
 
+// ── Sortierbare Tabellen (Editor-Konvention: "^" hinter dem Spaltennamen) ──
+//
+// Schreibweise bleibt ganz normales Markdown, z.B.:
+//   | Name | Prio^ |
+//   | :-- | :--: |
+//   | ...  | 2 |
+// Im Editor sieht man das "^" wie getippt. In der gerenderten Ansicht
+// (Preview/Detail) wird das "^" entfernt und die Zeilen werden nach dieser
+// Spalte sortiert - Zahlen numerisch, alles andere alphabetisch. Rein
+// statisch beim Rendern berechnet, keine Klick-Interaktivitaet.
+
+function stripSortMarker(cell: any): any | null {
+  if (!cell.text.trimEnd().endsWith("^")) return null;
+
+  const strippedText = cell.text.replace(/\^\s*$/, "");
+  const tokens = cell.tokens?.length
+    ? cell.tokens.map((t: any, idx: number) => {
+        const isLast = idx === cell.tokens.length - 1;
+        if (isLast && t.type === "text") {
+          const strippedInner = t.text.replace(/\^\s*$/, "");
+          return { ...t, text: strippedInner, raw: strippedInner };
+        }
+        return t;
+      })
+    : cell.tokens;
+
+  return { ...cell, text: strippedText, tokens };
+}
+
+function isNumericCellValue(cell: any): boolean {
+  const s = (cell?.text ?? "").trim();
+  return s !== "" && !isNaN(Number(s));
+}
+
+marked.use({
+  renderer: {
+    table(token: any) {
+      let sortColIndex = -1;
+
+      const header = token.header.map((cell: any, i: number) => {
+        const stripped = stripSortMarker(cell);
+        if (stripped) {
+          sortColIndex = i;
+          return stripped;
+        }
+        return cell;
+      });
+
+      // Kein "^" gefunden -> Standard-Rendering von marked uebernehmen lassen
+      if (sortColIndex === -1) return false;
+
+      const allNumeric = token.rows.every((row: any) => isNumericCellValue(row[sortColIndex]));
+
+      const rows = [...token.rows].sort((a: any, b: any) => {
+        const av = (a[sortColIndex]?.text ?? "").trim();
+        const bv = (b[sortColIndex]?.text ?? "").trim();
+        if (allNumeric) return Number(av) - Number(bv);
+        return av.localeCompare(bv, "de", { sensitivity: "base" });
+      });
+
+      let headerHtml = "";
+      for (const cell of header) headerHtml += (this as any).tablecell(cell);
+      const headHtml = (this as any).tablerow({ text: headerHtml });
+
+      let bodyHtml = "";
+      for (const row of rows) {
+        let rowHtml = "";
+        for (const cell of row) rowHtml += (this as any).tablecell(cell);
+        bodyHtml += (this as any).tablerow({ text: rowHtml });
+      }
+      if (bodyHtml) bodyHtml = `<tbody>${bodyHtml}</tbody>`;
+
+      return `<table>\n<thead>\n${headHtml}</thead>\n${bodyHtml}</table>\n`;
+    },
+  },
+});
+
 // ── Data ─────────────────────────────────────────────────────
 //
 // WICHTIG: Entry hat bewusst NUR ID, Titel, Inhalt, LastModified, Links -
