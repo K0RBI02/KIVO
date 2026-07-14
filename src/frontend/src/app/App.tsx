@@ -586,7 +586,7 @@ function EditScreen({
   onBack,
 }: {
   entryId: string | null;
-  onSave: () => void;
+  onSave: (savedEntryId: string) => void;
   onBack: () => void;
 }) {
   const [title, setTitle] = useState("");
@@ -614,10 +614,11 @@ function EditScreen({
     if (!title.trim()) return;
     if (entryId) {
       await api.update(entryId, title.trim(), content.trim());
+      onSave(entryId);
     } else {
-      await api.create(title.trim(), content.trim());
+      const created = await api.create(title.trim(), content.trim());
+      onSave(created.id);
     }
-    onSave();
   }, [title, content, entryId, onSave]);
 
   useEffect(() => {
@@ -673,9 +674,9 @@ function EditScreen({
   }
 
   return (
-    <div className="min-h-screen bg-[#fafaf8] px-5 sm:px-10 md:px-20 lg:px-40">
-      <div className="max-w-2xl mx-auto">
-        <div className="flex items-center justify-between pt-10 pb-8">
+    <div className="h-screen bg-[#fafaf8] px-5 sm:px-10 md:px-20 lg:px-40 flex flex-col">
+      <div className="max-w-2xl mx-auto w-full flex flex-col flex-1 min-h-0">
+        <div className="flex items-center justify-between pt-10 pb-8 flex-shrink-0">
           <button onClick={onBack} className="text-[#8c8c88] hover:text-[#111110] transition-colors text-[14px] min-h-[44px] flex items-center">
             Cancel
           </button>
@@ -700,21 +701,21 @@ function EditScreen({
         </div>
 
         {preview ? (
-          <div>
+          <div className="flex-1 overflow-y-auto pb-10">
             <h1 className="text-[26px] font-semibold tracking-tight text-[#111110] mb-5" style={{ letterSpacing: "-0.02em" }}>
               {title || <span className="text-[#c8c8c4]">Untitled</span>}
             </h1>
             <MarkdownContent content={content || "*Nothing yet…*"} />
           </div>
         ) : (
-          <>
+          <div className="flex-1 flex flex-col min-h-0">
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Title"
               autoFocus
-              className="w-full bg-transparent outline-none text-[24px] sm:text-[26px] font-semibold text-[#111110] placeholder:text-[#c8c8c4] mb-5 min-h-[44px]"
+              className="w-full bg-transparent outline-none text-[24px] sm:text-[26px] font-semibold text-[#111110] placeholder:text-[#c8c8c4] mb-5 min-h-[44px] flex-shrink-0"
               style={{ letterSpacing: "-0.02em", fontFamily: "'DM Sans', sans-serif" }}
             />
             <textarea
@@ -723,11 +724,10 @@ function EditScreen({
               onChange={(e) => setContent(e.target.value)}
               onPaste={handlePaste}
               placeholder={"Write in Markdown…\n\n# Heading\n**bold**, *italic*, `code`\n- list item\n\nCode und Bilder kannst du einfach einfuegen (Strg/Cmd+V) - wird automatisch erkannt."}
-              rows={18}
-              className="w-full bg-transparent outline-none text-[15px] sm:text-[16px] text-[#3d3d3a] placeholder:text-[#c8c8c4] leading-[1.75] resize-none"
+              className="w-full flex-1 min-h-0 bg-transparent outline-none text-[15px] sm:text-[16px] text-[#3d3d3a] placeholder:text-[#c8c8c4] leading-[1.75] resize-none overflow-y-auto pb-10"
               style={{ fontFamily: "'DM Sans', sans-serif" }}
             />
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -994,7 +994,15 @@ function SettingsScreen({ onBack }: { onBack: () => void }) {
 }
 
 // ── Fade transition wrapper ───────────────────────────────────
-
+//
+// WICHTIG: 'transform' wird NACH Abschluss der Eintritts-Animation
+// komplett entfernt (nicht auf "translateY(0)" belassen). Jeder
+// transform-Wert != none macht ein Element zum containing block fuer
+// position:fixed-Nachfahren (CSS-Spec-Verhalten). Vorher blieb
+// "translateY(0)" dauerhaft gesetzt, wodurch FixedNav (position:fixed)
+// nicht mehr relativ zum Viewport, sondern relativ zu diesem Wrapper-Div
+// positioniert wurde - bei langen Eintraegen wanderte der Button dadurch
+// ans Ende des Inhalts statt am Fensterrand zu kleben.
 function FadeScreen({ children, id }: { children: React.ReactNode; id: string }) {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -1006,7 +1014,7 @@ function FadeScreen({ children, id }: { children: React.ReactNode; id: string })
       key={id}
       style={{
         opacity: visible ? 1 : 0,
-        transform: visible ? "translateY(0)" : "translateY(6px)",
+        transform: visible ? undefined : "translateY(6px)",
         transition: "opacity 0.2s ease, transform 0.2s ease",
       }}
     >
@@ -1060,7 +1068,11 @@ export default function App() {
   if (screen.type === "edit")
     return (
       <FadeScreen id={`edit-${screen.entryId ?? "new"}`}>
-        <EditScreen entryId={screen.entryId} onSave={() => navigate({ type: "search" })} onBack={() => navigate({ type: "search" })} />
+        <EditScreen
+          entryId={screen.entryId}
+          onSave={(savedEntryId) => navigate({ type: "detail", entryId: savedEntryId })}
+          onBack={() => navigate({ type: "search" })}
+        />
       </FadeScreen>
     );
 

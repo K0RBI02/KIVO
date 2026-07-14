@@ -229,7 +229,12 @@ def main(port: int = 8420) -> None:
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print(f"KIVO API laeuft auf http://127.0.0.1:{port}")
     print("Endpunkte: GET /api/search?q=..., GET/POST /api/entries, GET /api/entries/<id>/links")
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n[KIVO] Server wird beendet...")
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":
