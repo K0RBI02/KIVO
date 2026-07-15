@@ -83,6 +83,37 @@ marked.use({
   },
 });
 
+// ── Checkboxen in Tabellenzellen ────────────────────────────────
+//
+// marked unterstuetzt "[ ]"/"[x]" (GFM-Checkboxen) nur block-seitig bei
+// Listeneintraegen ("- [ ] Text") - der Zelleninhalt einer Tabelle laeuft
+// aber durch den Inline-Parser, der dieses Muster nicht kennt. Deshalb
+// landet "[ ]"/"[x]" in einer Tabellenzelle sonst als reiner Text statt
+// als Checkbox. Diese Extension erkennt das Muster zusaetzlich inline und
+// nutzt denselben eingebauten "checkbox"-Renderer, den marked auch fuer
+// normale Listen-Checkboxen verwendet - optisch also exakt dasselbe Muster,
+// rein zur Anzeige (nicht anklickbar).
+marked.use({
+  extensions: [
+    {
+      name: "checkbox",
+      level: "inline",
+      start(src: string) {
+        return src.indexOf("[");
+      },
+      tokenizer(src: string) {
+        const match = /^\[([ xX])\]/.exec(src);
+        if (!match) return undefined;
+        return {
+          type: "checkbox",
+          raw: match[0],
+          checked: match[1].toLowerCase() === "x",
+        };
+      },
+    },
+  ],
+});
+
 // ── Data ─────────────────────────────────────────────────────
 //
 // WICHTIG: Entry hat bewusst NUR ID, Titel, Inhalt, LastModified, Links -
