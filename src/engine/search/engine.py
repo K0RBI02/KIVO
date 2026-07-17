@@ -22,11 +22,12 @@ from .link_suggester import suggest_links
 from .synonyms import SynonymDictionary
 from .learning import BehaviorMemory
 from .persistence import EntryStore
+from . import language as language_module
 
 from .pipeline.pipeline import Pipeline
 from .pipeline.tokenizer import Tokenizer
 from .pipeline.stopwords import StopwordFilter
-from .pipeline.normalizer import Normalizer
+from .pipeline.normalizer import NormalizerStage
 from .pipeline.keyword_extractor import KeywordExtractor
 from .pipeline.search_stage import SearchStage
 from .pipeline.scorer import Scorer
@@ -35,7 +36,7 @@ from .pipeline.result_builder import ResultBuilder, SearchResult
 
 class KnowledgeEngine:
 
-    def __init__(self, data_dir: str | Path = "kivo_data", auto_save: bool = True) -> None:
+    def __init__(self, data_dir: str | Path = "kivo_data", auto_save: bool = True, language: str = "auto") -> None:
         self.repository = EntryRepository()
         self.analysis = Analysis()
         self.graph = KnowledgeGraph()
@@ -45,7 +46,22 @@ class KnowledgeEngine:
         self._auto_save = auto_save
         self._store = EntryStore(data_dir)
 
+        self.language = language
+        self.stopwords = language_module.stopwords_for(language)
+        self.normalizer = language_module.normalizer_for(language)
+
         self._load_from_disk()
+
+    # -------- Sprache --------
+
+    def set_language(self, language: str) -> None:
+        self.language = language
+        self.stopwords = language_module.stopwords_for(language)
+        self.normalizer = language_module.normalizer_for(language)
+        self.rebuild_analysis()
+
+    def available_languages(self) -> list[str]:
+        return language_module.available_languages()
 
     # -------- Persistenz --------
 
@@ -61,6 +77,35 @@ class KnowledgeEngine:
     def _maybe_save(self) -> None:
         if self._auto_save:
             self.save()
+
+    def clear_all(self) -> None:
+        """Fuer 'Delete all data' - komplett zuruecksetzen."""
+        self.repository = EntryRepository()
+        self.behavior = BehaviorMemory()
+        self.rebuild_analysis()
+        self._maybe_save()
+
+    def export_all(self) -> list[dict]:
+        from .persistence import EntryStore
+        return [EntryStore._entry_to_dict(e) for e in self.repository.get_all()]
+
+    def import_entries(self, items: list[dict]) -> int:
+        """
+        Import - akzeptiert entweder {'title','content'} (einfacher Import)
+        oder volle Export-Objekte. Gibt Anzahl importierter Entries zurueck.
+        """
+        count = 0
+        for item in items:
+            title = item.get("title", "").strip()
+            content = item.get("content", "")
+            if not title:
+                continue
+            self.repository.create(Entry(title=title, content=content))
+            count += 1
+
+        self.rebuild_analysis()
+        self._maybe_save()
+        return count
 
     # -------- CRUD (kein Client baut das selbst) --------
 
@@ -114,18 +159,18 @@ class KnowledgeEngine:
     # -------- Self-Discovery (rein Engine-intern) --------
 
     def rebuild_analysis(self) -> None:
-        self.analysis = discover(self.repository.get_all())
-        self.graph = build_graph(self.repository.get_all(), self.analysis)
+        self.analysis = discover(self.repository.get_all(), stopwords=self.stopwords, normalizer=self.normalizer)
+        self.graph = build_graph(self.repository.get_all(), self.analysis, stopwords=self.stopwords, normalizer=self.normalizer)
 
     # -------- Die Suche - das Herz des Produkts --------
 
     def search(self, query: str) -> list[SearchResult]:
         pipeline = Pipeline([
             Tokenizer(),
-            StopwordFilter(),
-            Normalizer(),
+            StopwordFilter(words=self.stopwords),
+            NormalizerStage(self.normalizer),
             KeywordExtractor(self.analysis),
-            SearchStage(self.repository, synonyms=self.synonyms),
+            SearchStage(self.repository, synonyms=self.synonyms, stopwords=self.stopwords, normalizer=self.normalizer),
             Scorer(behavior=self.behavior),
             ResultBuilder(),
         ])
@@ -143,7 +188,10 @@ class KnowledgeEngine:
         entry = self.repository.get(entry_id)
         if entry is None:
             return []
-        return suggest_links(entry, self.repository.get_all(), self.analysis, self.graph, max_total=max_total)
+        return suggest_links(
+            entry, self.repository.get_all(), self.analysis, self.graph,
+            max_total=max_total, stopwords=self.stopwords, normalizer=self.normalizer,
+        )
 
     def related_concepts(self, term: str) -> list[tuple[str, float]]:
         return self.graph.connected_terms(term)

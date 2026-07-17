@@ -1,10 +1,118 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Pencil, Settings, ArrowLeft, X, Eye, FileText, Keyboard } from "lucide-react";
+import { Pencil, Settings, ArrowLeft, X, Eye, FileText, Keyboard, Link2 } from "lucide-react";
 import { marked } from "marked";
-import { api, ApiEntry, ApiSearchResult } from "./api";
+import { api, ApiEntry, ApiSearchResult, ApiLanguageInfo } from "./api";
 
 // ── Markdown config ───────────────────────────────────────────
 marked.setOptions({ breaks: true });
+
+// ── Sortierbare Tabellen (Editor-Konvention: "^" hinter dem Spaltennamen) ──
+//
+// Schreibweise bleibt ganz normales Markdown, z.B.:
+//   | Name | Prio^ |
+//   | :-- | :--: |
+//   | ...  | 2 |
+// Im Editor sieht man das "^" wie getippt. In der gerenderten Ansicht
+// (Preview/Detail) wird das "^" entfernt und die Zeilen werden nach dieser
+// Spalte sortiert - Zahlen numerisch, alles andere alphabetisch. Rein
+// statisch beim Rendern berechnet, keine Klick-Interaktivitaet.
+
+function stripSortMarker(cell: any): any | null {
+  if (!cell.text.trimEnd().endsWith("^")) return null;
+
+  const strippedText = cell.text.replace(/\^\s*$/, "");
+  const tokens = cell.tokens?.length
+    ? cell.tokens.map((t: any, idx: number) => {
+        const isLast = idx === cell.tokens.length - 1;
+        if (isLast && t.type === "text") {
+          const strippedInner = t.text.replace(/\^\s*$/, "");
+          return { ...t, text: strippedInner, raw: strippedInner };
+        }
+        return t;
+      })
+    : cell.tokens;
+
+  return { ...cell, text: strippedText, tokens };
+}
+
+function isNumericCellValue(cell: any): boolean {
+  const s = (cell?.text ?? "").trim();
+  return s !== "" && !isNaN(Number(s));
+}
+
+marked.use({
+  renderer: {
+    table(token: any) {
+      let sortColIndex = -1;
+
+      const header = token.header.map((cell: any, i: number) => {
+        const stripped = stripSortMarker(cell);
+        if (stripped) {
+          sortColIndex = i;
+          return stripped;
+        }
+        return cell;
+      });
+
+      // Kein "^" gefunden -> Standard-Rendering von marked uebernehmen lassen
+      if (sortColIndex === -1) return false;
+
+      const allNumeric = token.rows.every((row: any) => isNumericCellValue(row[sortColIndex]));
+
+      const rows = [...token.rows].sort((a: any, b: any) => {
+        const av = (a[sortColIndex]?.text ?? "").trim();
+        const bv = (b[sortColIndex]?.text ?? "").trim();
+        if (allNumeric) return Number(av) - Number(bv);
+        return av.localeCompare(bv, "de", { sensitivity: "base" });
+      });
+
+      let headerHtml = "";
+      for (const cell of header) headerHtml += (this as any).tablecell(cell);
+      const headHtml = (this as any).tablerow({ text: headerHtml });
+
+      let bodyHtml = "";
+      for (const row of rows) {
+        let rowHtml = "";
+        for (const cell of row) rowHtml += (this as any).tablecell(cell);
+        bodyHtml += (this as any).tablerow({ text: rowHtml });
+      }
+      if (bodyHtml) bodyHtml = `<tbody>${bodyHtml}</tbody>`;
+
+      return `<table>\n<thead>\n${headHtml}</thead>\n${bodyHtml}</table>\n`;
+    },
+  },
+});
+
+// ── Checkboxen in Tabellenzellen ────────────────────────────────
+//
+// marked unterstuetzt "[ ]"/"[x]" (GFM-Checkboxen) nur block-seitig bei
+// Listeneintraegen ("- [ ] Text") - der Zelleninhalt einer Tabelle laeuft
+// aber durch den Inline-Parser, der dieses Muster nicht kennt. Deshalb
+// landet "[ ]"/"[x]" in einer Tabellenzelle sonst als reiner Text statt
+// als Checkbox. Diese Extension erkennt das Muster zusaetzlich inline und
+// nutzt denselben eingebauten "checkbox"-Renderer, den marked auch fuer
+// normale Listen-Checkboxen verwendet - optisch also exakt dasselbe Muster,
+// rein zur Anzeige (nicht anklickbar).
+marked.use({
+  extensions: [
+    {
+      name: "checkbox",
+      level: "inline",
+      start(src: string) {
+        return src.indexOf("[");
+      },
+      tokenizer(src: string) {
+        const match = /^\[([ xX])\]/.exec(src);
+        if (!match) return undefined;
+        return {
+          type: "checkbox",
+          raw: match[0],
+          checked: match[1].toLowerCase() === "x",
+        };
+      },
+    },
+  ],
+});
 
 // ── Data ─────────────────────────────────────────────────────
 //
@@ -36,7 +144,17 @@ function KivoIcon({ size = 32, color = "#111110" }: { size?: number; color?: str
 
 function MarkdownContent({ content }: { content: string }) {
   const html = useMemo(() => marked(content) as string, [content]);
-  return <div className="prose-kivo" dangerouslySetInnerHTML={{ __html: html }} />;
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const hljs = (window as any).hljs;
+    if (!hljs || !ref.current) return;
+    ref.current.querySelectorAll("pre code").forEach((block) => {
+      hljs.highlightElement(block as HTMLElement);
+    });
+  }, [html]);
+
+  return <div ref={ref} className="prose-kivo" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 // ── Screens / navigation ───────────────────────────────────────
@@ -142,6 +260,7 @@ function useSwipeBack(onBack: () => void, enabled = true) {
 function useEngineSearch(query: string) {
   const [results, setResults] = useState<ApiSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,25 +270,25 @@ function useEngineSearch(query: string) {
       try {
         if (!query.trim()) {
           const recent = await api.recent(5);
-          if (!cancelled) setResults(recent.map((entry) => ({ entry, score: 0 })));
+          if (!cancelled) { setResults(recent.map((entry) => ({ entry, score: 0 }))); setError(null); }
         } else {
           const found = await api.search(query);
-          if (!cancelled) setResults(found);
+          if (!cancelled) { setResults(found); setError(null); }
         }
-      } catch {
-        if (!cancelled) setResults([]);
+      } catch (err) {
+        if (!cancelled) {
+          setResults([]);
+          setError(err instanceof Error ? err.message : "Unbekannter Fehler");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     }, 150);
 
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
+    return () => { cancelled = true; clearTimeout(t); };
   }, [query]);
 
-  return { results, loading };
+  return { results, loading, error };
 }
 
 // ── Search bar ────────────────────────────────────────────────
@@ -281,7 +400,7 @@ function SearchScreen({
   searchRef: React.RefObject<HTMLInputElement | null>;
 }) {
   const [query, setQuery] = useState("");
-  const { results } = useEngineSearch(query);
+  const { results, error } = useEngineSearch(query);
 
   return (
     <div className="min-h-screen bg-[#fafaf8] px-5 sm:px-10 md:px-20 lg:px-40">
@@ -294,7 +413,9 @@ function SearchScreen({
 
       <div className="max-w-2xl mx-auto">
         <SearchBar value={query} onChange={setQuery} large inputRef={searchRef} />
-
+        {error && (
+          <p className="text-[13px] text-[#d4183d] mb-4">{error}</p>
+        )}
         <ul className="mt-8 sm:mt-10 space-y-6 sm:space-y-7">
           {results.length === 0 && (
             <p className="text-[#8c8c88] text-[14px]">No entries found.</p>
@@ -348,40 +469,67 @@ function DetailScreen({
   const [query, setQuery] = useState("");
   const { results: searchResults } = useEngineSearch(query);
 
+  const [addingLink, setAddingLink] = useState(false);
+  const [linkQuery, setLinkQuery] = useState("");
+  const { results: linkResults } = useEngineSearch(linkQuery);
+
   useSwipeBack(onBack);
+
+  const refreshLinks = useCallback(async () => {
+    const links = await api.linksFor(entryId);
+    let manualIdx = 0;
+    const items = await Promise.all(
+      links.map(async (link) => {
+        const target = await api.get(link.target_id);
+        const item: RelatedItem = {
+          entry: target,
+          kind: link.kind,
+          index: link.kind === "manual" ? ++manualIdx : 0,
+        };
+        return item;
+      })
+    );
+    setRelated(items);
+  }, [entryId]);
+
+  const handleAddLink = useCallback(async (targetId: string) => {
+    await api.addManualLink(entryId, targetId);
+    setAddingLink(false);
+    setLinkQuery("");
+    await refreshLinks();
+  }, [entryId, refreshLinks]);
+
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setEntry(null);
     setRelated([]);
+    setLoadError(null);
 
     (async () => {
-      const e = await api.get(entryId);
-      if (cancelled) return;
-      setEntry(e);
-
-      const links = await api.linksFor(entryId);
-      if (cancelled) return;
-
-      let manualIdx = 0;
-      const items = await Promise.all(
-        links.map(async (link) => {
-          const target = await api.get(link.target_id);
-          const item: RelatedItem = {
-            entry: target,
-            kind: link.kind,
-            index: link.kind === "manual" ? ++manualIdx : 0,
-          };
-          return item;
-        })
-      );
-      if (!cancelled) setRelated(items);
+      try {
+        const e = await api.get(entryId);
+        if (cancelled) return;
+        setEntry(e);
+        await refreshLinks();
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : "Eintrag konnte nicht geladen werden.");
+        }
+      }
     })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [entryId]);
+    return () => { cancelled = true; };
+  }, [entryId, refreshLinks]);
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-[#fafaf8] flex items-center justify-center px-5">
+        <p className="text-[14px] text-[#d4183d] text-center">{loadError}</p>
+      </div>
+    );
+  }
 
   if (!entry) {
     return <div className="min-h-screen bg-[#fafaf8]" />;
@@ -443,6 +591,49 @@ function DetailScreen({
             <p className="text-[13px] text-[#8c8c88]">Keine verwandten Eintraege gefunden.</p>
           )}
         </ul>
+
+        <div className="mt-5">
+          {!addingLink ? (
+            <button
+              onClick={() => setAddingLink(true)}
+              className="flex items-center gap-1.5 text-[13px] text-[#8c8c88] hover:text-[#111110] transition-colors min-h-[44px]"
+            >
+              <Link2 size={13} strokeWidth={1.5} />
+              Link hinzufügen
+            </button>
+          ) : (
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <SearchBar value={linkQuery} onChange={setLinkQuery} />
+                </div>
+                <button
+                  onClick={() => { setAddingLink(false); setLinkQuery(""); }}
+                  className="flex items-center justify-center w-8 h-8 rounded-full hover:bg-[#111110]/6 text-[#c8c8c4] hover:text-[#111110] transition-colors flex-shrink-0"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              {linkQuery.trim() && (
+                <ul className="mt-3 space-y-2">
+                  {linkResults
+                    .filter(({ entry: r }) => r.id !== entry.id && !related.some((rel) => rel.entry.id === r.id))
+                    .slice(0, 5)
+                    .map(({ entry: r }) => (
+                      <li key={r.id}>
+                        <button
+                          onClick={() => handleAddLink(r.id)}
+                          className="text-left text-[13px] text-[#111110] hover:opacity-50 transition-opacity min-h-[36px] flex items-center"
+                        >
+                          {r.title}
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <FixedNav onEdit={onEdit} onSettings={onSettings} />
@@ -450,7 +641,52 @@ function DetailScreen({
   );
 }
 
-// ── Edit screen ───────────────────────────────────────────────
+// ── Auto-Erkennung beim Einfuegen (Code + Bilder) ──────────────
+//
+// Punkt 4 (Code-Erkennung) + Punkt 5 (Bilder) aus der Anforderung:
+// Kein manuelles ``` noetig - erkennt eingefuegten Code selbst und
+// verpackt ihn, erkennt eingefuegte Bilder und baut Markdown-Syntax.
+
+function looksLikeCode(text: string): boolean {
+  const lines = text.split("\n");
+  if (lines.length < 2 && text.length < 40) return false;
+
+  const signals = [
+    /^[\s]*[\$#>]\s/m,                     // Shell-Prompt: $ ..., # ..., > ...
+    /\b(sudo|systemctl|docker|apt|dnf|yum|curl|wget|ssh|chmod|chown|git)\b/,
+    /[{};]\s*$/m,                          // Code-typische Zeilenenden
+    /^\s*(function|const|let|var|def|class|import|from|return)\b/m,
+    /^\s{2,}\S/m,                          // Einrueckung
+    /=>|::|->/,
+  ];
+
+  const hits = signals.filter((re) => re.test(text)).length;
+  return hits >= 2;
+}
+
+function guessLanguage(text: string): string {
+  if (/^\s*[\{\[]/.test(text.trim())) {
+    try { JSON.parse(text); return "json"; } catch { /* not json */ }
+  }
+  if (/\b(def |import |print\(|self\.)\b/.test(text)) return "python";
+  if (/\b(const |let |=>|function )\b/.test(text)) return "javascript";
+  if (/^\s*[\w.-]+:\s/m.test(text) && !/;/.test(text)) return "yaml";
+  if (/\b(server|location|proxy_pass)\b/.test(text)) return "nginx";
+  if (/\bFROM\s+\w+/.test(text)) return "dockerfile";
+  return "bash";
+}
+
+function wrapAsCodeBlock(text: string): string {
+  const lang = guessLanguage(text);
+  const trimmed = text.replace(/\n+$/, "");
+  return "```" + lang + "\n" + trimmed + "\n```";
+}
+
+function insertAtCursor(currentValue: string, start: number, end: number, insertText: string): { value: string; cursor: number } {
+  const value = currentValue.slice(0, start) + insertText + currentValue.slice(end);
+  return { value, cursor: start + insertText.length };
+}
+
 
 function EditScreen({
   entryId,
@@ -458,13 +694,14 @@ function EditScreen({
   onBack,
 }: {
   entryId: string | null;
-  onSave: () => void;
+  onSave: (savedEntryId: string) => void;
   onBack: () => void;
 }) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [preview, setPreview] = useState(false);
   const [loaded, setLoaded] = useState(entryId === null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useSwipeBack(onBack);
 
@@ -485,10 +722,11 @@ function EditScreen({
     if (!title.trim()) return;
     if (entryId) {
       await api.update(entryId, title.trim(), content.trim());
+      onSave(entryId);
     } else {
-      await api.create(title.trim(), content.trim());
+      const created = await api.create(title.trim(), content.trim());
+      onSave(created.id);
     }
-    onSave();
   }, [title, content, entryId, onSave]);
 
   useEffect(() => {
@@ -496,14 +734,57 @@ function EditScreen({
     return () => { delete (window as any).__kivoSave; };
   }, [handleSave]);
 
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    // 1) Bild eingefuegt (Screenshot, kopiertes Bild, etc.)
+    const imageItem = Array.from(e.clipboardData.items).find((it) => it.type.startsWith("image/"));
+    if (imageItem) {
+      e.preventDefault();
+      const file = imageItem.getAsFile();
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        const { value, cursor } = insertAtCursor(
+          content,
+          textarea.selectionStart,
+          textarea.selectionEnd,
+          `\n![](${dataUrl})\n`
+        );
+        setContent(value);
+        requestAnimationFrame(() => textarea.setSelectionRange(cursor, cursor));
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    // 2) Text eingefuegt, der wie Code aussieht -> automatisch als Codeblock wrappen
+    const text = e.clipboardData.getData("text/plain");
+    if (text && looksLikeCode(text)) {
+      e.preventDefault();
+      const wrapped = wrapAsCodeBlock(text);
+      const { value, cursor } = insertAtCursor(
+        content,
+        textarea.selectionStart,
+        textarea.selectionEnd,
+        `\n${wrapped}\n`
+      );
+      setContent(value);
+      requestAnimationFrame(() => textarea.setSelectionRange(cursor, cursor));
+    }
+    // sonst: normales Einfuegen, Browser macht das von selbst (kein preventDefault)
+  }, [content]);
+
   if (!loaded) {
     return <div className="min-h-screen bg-[#fafaf8]" />;
   }
 
   return (
-    <div className="min-h-screen bg-[#fafaf8] px-5 sm:px-10 md:px-20 lg:px-40">
-      <div className="max-w-2xl mx-auto">
-        <div className="flex items-center justify-between pt-10 pb-8">
+    <div className="h-screen bg-[#fafaf8] px-5 sm:px-10 md:px-20 lg:px-40 flex flex-col">
+      <div className="max-w-2xl mx-auto w-full flex flex-col flex-1 min-h-0">
+        <div className="flex items-center justify-between pt-10 pb-8 flex-shrink-0">
           <button onClick={onBack} className="text-[#8c8c88] hover:text-[#111110] transition-colors text-[14px] min-h-[44px] flex items-center">
             Cancel
           </button>
@@ -528,32 +809,33 @@ function EditScreen({
         </div>
 
         {preview ? (
-          <div>
+          <div className="flex-1 overflow-y-auto pb-10">
             <h1 className="text-[26px] font-semibold tracking-tight text-[#111110] mb-5" style={{ letterSpacing: "-0.02em" }}>
               {title || <span className="text-[#c8c8c4]">Untitled</span>}
             </h1>
             <MarkdownContent content={content || "*Nothing yet…*"} />
           </div>
         ) : (
-          <>
+          <div className="flex-1 flex flex-col min-h-0">
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="Title"
               autoFocus
-              className="w-full bg-transparent outline-none text-[24px] sm:text-[26px] font-semibold text-[#111110] placeholder:text-[#c8c8c4] mb-5 min-h-[44px]"
+              className="w-full bg-transparent outline-none text-[24px] sm:text-[26px] font-semibold text-[#111110] placeholder:text-[#c8c8c4] mb-5 min-h-[44px] flex-shrink-0"
               style={{ letterSpacing: "-0.02em", fontFamily: "'DM Sans', sans-serif" }}
             />
             <textarea
+              ref={textareaRef}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder={"Write in Markdown…\n\n# Heading\n**bold**, *italic*, `code`\n- list item"}
-              rows={18}
-              className="w-full bg-transparent outline-none text-[15px] sm:text-[16px] text-[#3d3d3a] placeholder:text-[#c8c8c4] leading-[1.75] resize-none"
+              onPaste={handlePaste}
+              placeholder={"Write in Markdown…\n\n# Heading\n**bold**, *italic*, `code`\n- list item\n\nCode und Bilder kannst du einfach einfuegen (Strg/Cmd+V) - wird automatisch erkannt."}
+              className="w-full flex-1 min-h-0 bg-transparent outline-none text-[15px] sm:text-[16px] text-[#3d3d3a] placeholder:text-[#c8c8c4] leading-[1.75] resize-none overflow-y-auto pb-10"
               style={{ fontFamily: "'DM Sans', sans-serif" }}
             />
-          </>
+          </div>
         )}
       </div>
     </div>
@@ -561,6 +843,32 @@ function EditScreen({
 }
 
 // ── Settings screen ───────────────────────────────────────────
+
+// ── Appearance (Theme / Font size) ─────────────────────────────
+//
+// Bewusst localStorage (kein Artifact-Sandbox-Kontext, das ist eine
+// echte, eigenstaendige Vite-App im Browser des Nutzers).
+
+type ThemePref = "light" | "dark" | "system";
+type FontSizePref = "small" | "medium" | "large";
+
+const FONT_SIZES: Record<FontSizePref, string> = { small: "14px", medium: "15px", large: "17px" };
+
+function applyTheme(pref: ThemePref) {
+  const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const dark = pref === "dark" || (pref === "system" && systemDark);
+  document.documentElement.classList.toggle("dark", dark);
+}
+
+function applyFontSize(pref: FontSizePref) {
+  document.documentElement.style.setProperty("--font-size", FONT_SIZES[pref]);
+}
+
+function loadAppearancePrefs(): { theme: ThemePref; fontSize: FontSizePref } {
+  const theme = (localStorage.getItem("kivo-theme") as ThemePref) || "light";
+  const fontSize = (localStorage.getItem("kivo-fontsize") as FontSizePref) || "medium";
+  return { theme, fontSize };
+}
 
 const SHORTCUTS = [
   { keys: "⌘K / /", action: "Focus search" },
@@ -572,6 +880,73 @@ const SHORTCUTS = [
 
 function SettingsScreen({ onBack }: { onBack: () => void }) {
   useSwipeBack(onBack);
+
+  const [theme, setTheme] = useState<ThemePref>("light");
+  const [fontSize, setFontSize] = useState<FontSizePref>("medium");
+  const [langInfo, setLangInfo] = useState<ApiLanguageInfo | null>(null);
+  const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const prefs = loadAppearancePrefs();
+    setTheme(prefs.theme);
+    setFontSize(prefs.fontSize);
+    api.getLanguage().then(setLangInfo).catch(() => {});
+  }, []);
+
+  const changeTheme = (pref: ThemePref) => {
+    setTheme(pref);
+    localStorage.setItem("kivo-theme", pref);
+    applyTheme(pref);
+  };
+
+  const changeFontSize = (pref: FontSizePref) => {
+    setFontSize(pref);
+    localStorage.setItem("kivo-fontsize", pref);
+    applyFontSize(pref);
+  };
+
+  const changeLanguage = async (lang: string) => {
+    await api.setLanguage(lang);
+    setLangInfo((prev) => (prev ? { ...prev, current: lang } : prev));
+  };
+
+  const handleExport = async () => {
+    const entries = await api.exportAll();
+    const blob = new Blob([JSON.stringify(entries, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `kivo-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const items = Array.isArray(parsed) ? parsed : [];
+      const { imported } = await api.importEntries(items);
+      setImportStatus(`${imported} Eintraege importiert.`);
+    } catch {
+      setImportStatus("Import fehlgeschlagen - ist die Datei gueltiges JSON?");
+    } finally {
+      e.target.value = "";
+      setTimeout(() => setImportStatus(null), 4000);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    if (!window.confirm("Wirklich ALLE Eintraege unwiderruflich loeschen?")) return;
+    setDeleting(true);
+    await api.deleteAll();
+    setDeleting(false);
+  };
+
   return (
     <div className="min-h-screen bg-[#fafaf8] px-5 sm:px-10 md:px-20 lg:px-40">
       <div className="max-w-2xl mx-auto">
@@ -583,26 +958,114 @@ function SettingsScreen({ onBack }: { onBack: () => void }) {
         </div>
 
         <div className="space-y-10">
-          {[
-            { label: "Account", items: ["Sign out", "Change email", "Change password"] },
-            { label: "Appearance", items: ["Light mode", "System default", "Font size"] },
-            { label: "Data", items: ["Export all entries", "Import entries", "Delete all data"] },
-          ].map((group) => (
-            <div key={group.label}>
-              <p className="text-[11px] text-[#8c8c88] uppercase tracking-[0.1em] mb-4" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-                {group.label}
-              </p>
-              <ul className="space-y-1">
-                {group.items.map((item) => (
-                  <li key={item}>
-                    <button className="text-[15px] text-[#111110] hover:opacity-50 transition-opacity text-left min-h-[44px] flex items-center w-full">
-                      {item}
-                    </button>
-                  </li>
+          {/* Account - ehrlich statt vorgetaeuscht: KIVO läuft lokal, es gibt kein Konto */}
+          <div>
+            <p className="text-[11px] text-[#8c8c88] uppercase tracking-[0.1em] mb-4" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              Account
+            </p>
+            <p className="text-[13px] text-[#8c8c88] leading-relaxed">
+              KIVO läuft lokal auf deinem Gerät - es gibt kein Konto und keinen Login.
+              Deine Daten liegen ausschließlich in <code className="text-[12px] bg-[#f2f2f0] px-1 py-0.5 rounded">kivo_data/entries.json</code>.
+            </p>
+          </div>
+
+          {/* Appearance */}
+          <div>
+            <p className="text-[11px] text-[#8c8c88] uppercase tracking-[0.1em] mb-4" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              Appearance
+            </p>
+            <div className="flex items-center justify-between min-h-[44px]">
+              <span className="text-[15px] text-[#111110]">Theme</span>
+              <div className="flex gap-1">
+                {(["light", "dark", "system"] as ThemePref[]).map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => changeTheme(opt)}
+                    className={`text-[12px] px-2.5 py-1 rounded transition-colors ${
+                      theme === opt ? "bg-[#111110] text-[#fafaf8]" : "text-[#8c8c88] hover:text-[#111110] bg-[#f2f2f0]"
+                    }`}
+                  >
+                    {opt === "light" ? "Light" : opt === "dark" ? "Dark" : "System"}
+                  </button>
                 ))}
-              </ul>
+              </div>
             </div>
-          ))}
+            <div className="flex items-center justify-between min-h-[44px]">
+              <span className="text-[15px] text-[#111110]">Font size</span>
+              <div className="flex gap-1">
+                {(["small", "medium", "large"] as FontSizePref[]).map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => changeFontSize(opt)}
+                    className={`text-[12px] px-2.5 py-1 rounded transition-colors ${
+                      fontSize === opt ? "bg-[#111110] text-[#fafaf8]" : "text-[#8c8c88] hover:text-[#111110] bg-[#f2f2f0]"
+                    }`}
+                  >
+                    {opt === "small" ? "S" : opt === "medium" ? "M" : "L"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Language / Suche */}
+          <div>
+            <p className="text-[11px] text-[#8c8c88] uppercase tracking-[0.1em] mb-4" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              Search language
+            </p>
+            <div className="flex items-center justify-between min-h-[44px]">
+              <span className="text-[15px] text-[#111110]">Sprache</span>
+              <div className="flex gap-1">
+                {(langInfo?.available ?? ["auto", "de", "en"]).map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => changeLanguage(opt)}
+                    className={`text-[12px] px-2.5 py-1 rounded transition-colors ${
+                      langInfo?.current === opt ? "bg-[#111110] text-[#fafaf8]" : "text-[#8c8c88] hover:text-[#111110] bg-[#f2f2f0]"
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {langInfo && !langInfo.snowball_available && (
+              <p className="text-[12px] text-[#8c8c88] mt-2 leading-relaxed">
+                Fuer praeziseres Stemming optional installieren:{" "}
+                <code className="bg-[#f2f2f0] px-1 py-0.5 rounded">pip install snowballstemmer</code>
+              </p>
+            )}
+          </div>
+
+          {/* Data */}
+          <div>
+            <p className="text-[11px] text-[#8c8c88] uppercase tracking-[0.1em] mb-4" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+              Data
+            </p>
+            <ul className="space-y-1">
+              <li>
+                <button onClick={handleExport} className="text-[15px] text-[#111110] hover:opacity-50 transition-opacity text-left min-h-[44px] flex items-center w-full">
+                  Export all entries
+                </button>
+              </li>
+              <li>
+                <button onClick={() => fileInputRef.current?.click()} className="text-[15px] text-[#111110] hover:opacity-50 transition-opacity text-left min-h-[44px] flex items-center w-full">
+                  Import entries
+                </button>
+                <input ref={fileInputRef} type="file" accept="application/json" onChange={handleImportFile} className="hidden" />
+              </li>
+              <li>
+                <button
+                  onClick={handleDeleteAll}
+                  disabled={deleting}
+                  className="text-[15px] text-[#d4183d] hover:opacity-60 transition-opacity text-left min-h-[44px] flex items-center w-full disabled:opacity-40"
+                >
+                  {deleting ? "Loesche…" : "Delete all data"}
+                </button>
+              </li>
+            </ul>
+            {importStatus && <p className="text-[12px] text-[#8c8c88] mt-1">{importStatus}</p>}
+          </div>
 
           <div>
             <p className="text-[11px] text-[#8c8c88] uppercase tracking-[0.1em] mb-4 flex items-center gap-1.5" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
@@ -639,7 +1102,15 @@ function SettingsScreen({ onBack }: { onBack: () => void }) {
 }
 
 // ── Fade transition wrapper ───────────────────────────────────
-
+//
+// WICHTIG: 'transform' wird NACH Abschluss der Eintritts-Animation
+// komplett entfernt (nicht auf "translateY(0)" belassen). Jeder
+// transform-Wert != none macht ein Element zum containing block fuer
+// position:fixed-Nachfahren (CSS-Spec-Verhalten). Vorher blieb
+// "translateY(0)" dauerhaft gesetzt, wodurch FixedNav (position:fixed)
+// nicht mehr relativ zum Viewport, sondern relativ zu diesem Wrapper-Div
+// positioniert wurde - bei langen Eintraegen wanderte der Button dadurch
+// ans Ende des Inhalts statt am Fensterrand zu kleben.
 function FadeScreen({ children, id }: { children: React.ReactNode; id: string }) {
   const [visible, setVisible] = useState(false);
   useEffect(() => {
@@ -651,7 +1122,7 @@ function FadeScreen({ children, id }: { children: React.ReactNode; id: string })
       key={id}
       style={{
         opacity: visible ? 1 : 0,
-        transform: visible ? "translateY(0)" : "translateY(6px)",
+        transform: visible ? undefined : "translateY(6px)",
         transition: "opacity 0.2s ease, transform 0.2s ease",
       }}
     >
@@ -667,6 +1138,13 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const navigate = useCallback((next: Screen) => setScreen(next), []);
+
+  // Gespeicherte Darstellung sofort anwenden, bevor irgendwas gerendert wird
+  useEffect(() => {
+    const prefs = loadAppearancePrefs();
+    applyTheme(prefs.theme);
+    applyFontSize(prefs.fontSize);
+  }, []);
 
   useEffect(() => {
     if (screen.type !== "loading") return;
@@ -698,7 +1176,11 @@ export default function App() {
   if (screen.type === "edit")
     return (
       <FadeScreen id={`edit-${screen.entryId ?? "new"}`}>
-        <EditScreen entryId={screen.entryId} onSave={() => navigate({ type: "search" })} onBack={() => navigate({ type: "search" })} />
+        <EditScreen
+          entryId={screen.entryId}
+          onSave={(savedEntryId) => navigate({ type: "detail", entryId: savedEntryId })}
+          onBack={() => navigate({ type: "search" })}
+        />
       </FadeScreen>
     );
 

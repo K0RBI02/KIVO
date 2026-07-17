@@ -18,6 +18,7 @@ GERMAN_STOPWORDS = {
     "am", "bei", "aus", "nach", "ueber", "über", "unter", "durch", "um",
     "ohne", "gegen", "bis", "seit", "nochmal", "nochmals", "wieder", "man",
     "kann", "muss", "soll", "wird", "werden", "sein", "haben", "dann",
+    "hier", "dort", "da", "hierzu", "davon", "dabei",
 }
 
 ENGLISH_STOPWORDS = {
@@ -32,5 +33,8 @@ STOPWORDS = GERMAN_STOPWORDS | ENGLISH_STOPWORDS
 
 class StopwordFilter:
 
+    def __init__(self, words: set[str] | None = None) -> None:
+        self._words = words if words is not None else STOPWORDS
+
     def execute(self, context) -> None:
-        context.filtered_tokens = [t for t in context.tokens if t not in STOPWORDS]
+        context.filtered_tokens = [t for t in context.tokens if t not in self._words]

@@ -80,7 +80,7 @@ class KnowledgeGraph:
         )
 
 
-def build_graph(entries: tuple[Entry, ...], analysis: Analysis) -> KnowledgeGraph:
+def build_graph(entries: tuple[Entry, ...], analysis: Analysis, stopwords: set[str] | None = None, normalizer=None) -> KnowledgeGraph:
     """
     Baut den Graphen komplett neu aus dem aktuellen Wissen.
     Nur echte 'Konzepte' (>=2 Entries) werden zu Knoten - einzelne
@@ -90,16 +90,18 @@ def build_graph(entries: tuple[Entry, ...], analysis: Analysis) -> KnowledgeGrap
     from .pipeline.tokenizer import Tokenizer
     from .pipeline.normalizer import Normalizer
     from .pipeline.stopwords import STOPWORDS
+    from .text_cleaning import strip_media
 
     tokenizer = Tokenizer()
-    normalizer = Normalizer()
+    active_normalizer = normalizer if normalizer is not None else Normalizer()
+    active_stopwords = stopwords if stopwords is not None else STOPWORDS
     graph = KnowledgeGraph()
 
     for entry in entries:
-        text = f"{entry.title} {entry.content}"
+        text = strip_media(f"{entry.title} {entry.content}")
         tokens = tokenizer.tokenize(text)
-        filtered = [t for t in tokens if t not in STOPWORDS]
-        normalized = {normalizer.normalize(t) for t in filtered}
+        filtered = [t for t in tokens if t not in active_stopwords]
+        normalized = {active_normalizer.normalize(t) for t in filtered}
 
         concept_terms = sorted(t for t in normalized if analysis.is_known_concept(t))
 

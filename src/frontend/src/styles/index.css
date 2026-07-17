@@ -72,3 +72,45 @@
   text-decoration-color: #c8c8c4;
 }
 .prose-kivo a:hover { text-decoration-color: #111110; }
+
+/* Bilder (eingefuegt per Paste) - leichte Abrundung, nie breiter als der Text */
+.prose-kivo img {
+  max-width: 100%;
+  border-radius: 10px;
+  display: block;
+  margin: 1.25em 0;
+}
+
+/* Syntax-Highlighting (highlight.js) - eigenes, dezentes Theme statt
+   eines fremden Farbschemas, damit es zur KIVO-Palette passt */
+.prose-kivo .hljs { background: transparent; color: #3d3d3a; }
+.prose-kivo .hljs-keyword,
+.prose-kivo .hljs-built_in,
+.prose-kivo .hljs-selector-tag { color: #111110; font-weight: 600; }
+.prose-kivo .hljs-string,
+.prose-kivo .hljs-attr { color: #4a7a5c; }
+.prose-kivo .hljs-number,
+.prose-kivo .hljs-literal { color: #b5622a; }
+.prose-kivo .hljs-comment { color: #8c8c88; font-style: italic; }
+.prose-kivo .hljs-title,
+.prose-kivo .hljs-function { color: #111110; }
+.prose-kivo .hljs-variable,
+.prose-kivo .hljs-params { color: #5b8def; }
+
+/* ── Dark mode (Settings -> Appearance) ─────────────────────── */
+.dark body,
+.dark {
+  --background: #171715;
+  --foreground: #ededea;
+}
+.dark .bg-\[\#fafaf8\] { background-color: #171715 !important; }
+.dark .text-\[\#111110\] { color: #ededea !important; }
+.dark .text-\[\#8c8c88\] { color: #9a9a95 !important; }
+.dark .text-\[\#c8c8c4\] { color: #5c5c58 !important; }
+.dark .border-\[\#e5e5e2\] { border-color: #2c2c29 !important; }
+.dark .bg-\[\#f2f2f0\] { background-color: #232320 !important; }
+.dark .prose-kivo { color: #cfcfc9; }
+.dark .prose-kivo h1, .dark .prose-kivo h2, .dark .prose-kivo h3 { color: #ededea; }
+.dark .prose-kivo strong { color: #ededea; }
+.dark .prose-kivo code { background: #232320; color: #ededea; }
+.dark .prose-kivo pre { background: #232320; }

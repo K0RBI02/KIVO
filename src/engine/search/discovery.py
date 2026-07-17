@@ -16,22 +16,24 @@ from .entry import Entry
 from .analysis import Analysis, ConceptStats
 from .pipeline.tokenizer import Tokenizer
 from .pipeline.normalizer import Normalizer
+from .text_cleaning import strip_media
 
 
-def discover(entries: tuple[Entry, ...]) -> Analysis:
+def discover(entries: tuple[Entry, ...], stopwords: set[str] | None = None, normalizer=None) -> Analysis:
     """Baut eine komplett neue Analysis aus dem aktuellen Entry-Bestand."""
 
     tokenizer = Tokenizer()
-    normalizer = Normalizer()
+    active_normalizer = normalizer if normalizer is not None else Normalizer()
+    active_stopwords = stopwords if stopwords is not None else _stopwords()
 
     analysis = Analysis()
     analysis._total_documents = len(entries)
 
     for entry in entries:
-        text = f"{entry.title} {entry.content}"
+        text = strip_media(f"{entry.title} {entry.content}")
         raw_tokens = tokenizer.tokenize(text)
-        filtered = [t for t in raw_tokens if t not in _stopwords()]
-        normalized = [normalizer.normalize(t) for t in filtered]
+        filtered = [t for t in raw_tokens if t not in active_stopwords]
+        normalized = [active_normalizer.normalize(t) for t in filtered]
 
         seen_in_this_entry: set[str] = set()
 

@@ -1,0 +1,132 @@
+# ============================================================
+# KIVO – .gitignore
+# Python-Engine + Tauri/Rust-Shell + Vite/React-Frontend
+# ============================================================
+
+# ==========================================
+# Python (Engine: src/engine/)
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+nosetests.xml
+coverage.xml
+*.cover
+
+# Type checkers
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# Jupyter/IPython (falls für Prototyping genutzt)
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+
+# Kivo-Nutzdaten (lokale Notizen – NICHT ins Repo!)
+kivo_data/
+src/engine/kivo_data/
+
+# ==========================================
+# Rust / Tauri (src/frontend/src-tauri/)
+# ==========================================
+**/target/
+src/frontend/src-tauri/target/
+*.pdb
+*.rlib
+*.exe
+*.dll
+*.dylib
+src/frontend/src-tauri/Cargo.lock
+src/frontend/src-tauri/gen/schemas/
+
+# ==========================================
+# Node.js / Vite / React (src/frontend/)
+# ==========================================
+node_modules/
+src/frontend/node_modules/
+dist/
+src/frontend/dist/
+.env.local
+.env.*.local
+src/frontend/package-lock.json
+src/frontend/pnpm-lock.yaml
+.vite/
+*.tsbuildinfo
+
+# ==========================================
+# Editoren / IDEs
+# ==========================================
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ==========================================
+# Betriebssystem-Müll
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# Logs & temporäre Dateien
+# ==========================================
+*.log
+logs/
+*.tmp
+*.temp
+tempCodeRunnerFile.py
+
+# ==========================================
+# Aufräum-Zwischenstand (siehe Review-Session)
+# Entferne diese Zeile, sobald src/engine/_legacy/
+# final gelöscht statt nur gestaged wurde.
+# ==========================================
+# src/engine/_legacy/

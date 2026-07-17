@@ -21,9 +21,28 @@ from uuid import UUID
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from search.engine import KnowledgeEngine
+from search import language
+
+
+# Exception classes used by the error handler
+class EntityNotFoundError(Exception):
+    """Raised when an entity is not found."""
+    pass
+
+
+class DomainError(Exception):
+    """Raised when a domain constraint is violated."""
+    pass
+
 
 engine = KnowledgeEngine(data_dir="kivo_data")
 
+ALLOWED_ORIGINS = {
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "tauri://localhost",
+    "https://tauri.localhost",
+}
 
 def entry_to_json(entry) -> dict:
     return {
@@ -41,7 +60,12 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
+
+        origin = self.headers.get("Origin")
+        if origin in ALLOWED_ORIGINS:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Content-Length", str(len(body)))
@@ -57,7 +81,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         self._send_json({})
 
-    def do_GET(self) -> None:
+    def _do_GET(self) -> None:
         parsed = urlparse(self.path)
         parts = [p for p in parsed.path.split("/") if p]
         query = parse_qs(parsed.query)
@@ -88,6 +112,18 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json([entry_to_json(e) for e in engine.recent(limit)])
             return
 
+        if parts == ["api", "export"]:
+            self._send_json(engine.export_all())
+            return
+
+        if parts == ["api", "language"]:
+            self._send_json({
+                "current": engine.language,
+                "available": engine.available_languages(),
+                "snowball_available": language.snowball_available(),
+            })
+            return
+
         if parts == ["api", "search"]:
             q = unquote(query.get("q", [""])[0])
             results = engine.search(q)
@@ -99,7 +135,7 @@ class Handler(BaseHTTPRequestHandler):
 
         self._send_json({"error": "unknown route"}, 404)
 
-    def do_POST(self) -> None:
+    def _do_POST(self) -> None:
         parsed = urlparse(self.path)
         parts = [p for p in parsed.path.split("/") if p]
         data = self._read_json()
@@ -127,11 +163,26 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": True})
             return
 
+        if parts == ["api", "import"]:
+            count = engine.import_entries(data.get("entries", []))
+            self._send_json({"imported": count})
+            return
+
+        if parts == ["api", "language"]:
+            engine.set_language(data.get("language", "auto"))
+            self._send_json({"current": engine.language})
+            return
+
         self._send_json({"error": "unknown route"}, 404)
 
-    def do_DELETE(self) -> None:
+    def _do_DELETE(self) -> None:
         parsed = urlparse(self.path)
         parts = [p for p in parsed.path.split("/") if p]
+
+        if parts == ["api", "entries"]:
+            engine.clear_all()
+            self._send_json({"ok": True})
+            return
 
         if len(parts) == 3 and parts[:2] == ["api", "entries"]:
             engine.delete(UUID(parts[2]))
@@ -143,12 +194,47 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args) -> None:
         sys.stderr.write("%s - %s\n" % (self.address_string(), format % args))
 
+    def do_GET(self) -> None:
+        try:
+            self._do_GET()
+        except Exception as exc:
+            self._handle_error(exc)
+
+    def do_POST(self) -> None:
+        try:
+            self._do_POST()
+        except Exception as exc:
+            self._handle_error(exc)
+
+    def do_DELETE(self) -> None:
+        try:
+            self._do_DELETE()
+        except Exception as exc:
+            self._handle_error(exc)
+
+    def _handle_error(self, exc: Exception) -> None:
+        if isinstance(exc, (ValueError, KeyError, json.JSONDecodeError)):
+            status = 400
+        elif isinstance(exc, EntityNotFoundError):
+            status = 404
+        elif isinstance(exc, DomainError):
+            status = 409
+        else:
+            status = 500
+
+        sys.stderr.write(f"[KIVO API] {type(exc).__name__}: {exc}\n")
+        self._send_json({"error": str(exc) or type(exc).__name__}, status)
 
 def main(port: int = 8420) -> None:
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print(f"KIVO API laeuft auf http://127.0.0.1:{port}")
     print("Endpunkte: GET /api/search?q=..., GET/POST /api/entries, GET /api/entries/<id>/links")
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n[KIVO] Server wird beendet...")
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":
