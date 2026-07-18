@@ -17,6 +17,8 @@
 // Tauri-"Sidecar"-Binary eingebunden werden - das ist ein separater,
 // noch offener Schritt.
 
+mod engine;
+
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use tauri::Manager;
