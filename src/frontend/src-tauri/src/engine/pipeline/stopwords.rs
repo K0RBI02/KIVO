@@ -38,3 +38,31 @@ pub fn all_stopwords() -> HashSet<&'static str> {
         .chain(english_stopwords())
         .collect()
 }
+
+/// Entspricht `language.available_languages()`.
+pub fn available_languages() -> Vec<&'static str> {
+    vec!["auto", "de", "en"]
+}
+
+/// Entspricht `language.stopwords_for(lang)`.
+/// "de" -> nur deutsche Stopwords, "en" -> nur englische, alles andere
+/// (inkl. "auto", dem Default) -> die kombinierte Liste.
+///
+/// SCOPE-HINWEIS: Python's `language.normalizer_for(lang)` wuerde bei "de"/
+/// "en" zusaetzlich auf einen praeziseren Snowball-Stemmer umschalten -
+/// aber NUR, falls das optionale Paket `snowballstemmer` installiert ist
+/// (sonst faellt Python selbst auf denselben heuristischen Normalizer
+/// zurueck, den wir hier immer verwenden). Dieser Rust-Port bildet aktuell
+/// den Fall "kein Snowball installiert" ab, also Python's eigenes
+/// Default-/Fallback-Verhalten. Falls bei euch tatsaechlich
+/// `snowballstemmer` im Python-venv installiert war, wuerde die deutsche/
+/// englische Stemming-Praezision hier leicht abweichen - dann bitte
+/// Bescheid geben, das liesse sich mit dem Rust-Crate `rust-stemmers`
+/// gezielt nachruesten.
+pub fn stopwords_for(language: &str) -> HashSet<&'static str> {
+    match language {
+        "de" => german_stopwords(),
+        "en" => english_stopwords(),
+        _ => all_stopwords(),
+    }
+}

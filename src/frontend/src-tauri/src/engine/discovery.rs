@@ -8,27 +8,23 @@
 //! beobachtet, welche Begriffe in mehreren Entries auftauchen, und
 //! erklaert die selbst zu "Konzepten".
 //!
-//! SCOPE-HINWEIS: das Python-Original erlaubt optionale `stopwords`/
-//! `normalizer`-Parameter fuer Sprachumschaltung (language.py, snowball-
-//! Stemmer). Dieser Rust-Port deckt bisher nur den Default-Modus ab
-//! (kombinierte DE+EN-Stopwords + heuristischer Normalizer) - das ist
-//! exakt das Verhalten, das KIVO bisher mit `language="auto"` (dem
-//! Standard) sowieso genutzt hat. Eine echte Sprachumschaltung waere ein
-//! separater, spaeterer Ausbauschritt, falls gewuenscht.
+//! SPRACH-HINWEIS: `stopwords` ist jetzt parametrisiert (siehe
+//! `pipeline::stopwords::stopwords_for`) - die Sprachumschaltung "auto"/
+//! "de"/"en" wirkt sich also auf die Stopword-Filterung aus. Der
+//! Normalizer bleibt weiterhin immer der heuristische (kein Snowball-
+//! Stemmer-Support) - siehe Scope-Hinweis in `pipeline::stopwords`.
 
 use std::collections::HashSet;
 
 use crate::engine::analysis::{Analysis, ConceptStats};
 use crate::engine::entry::Entry;
 use crate::engine::pipeline::normalizer;
-use crate::engine::pipeline::stopwords::all_stopwords;
 use crate::engine::pipeline::tokenizer;
 use crate::engine::text_cleaning::strip_media;
 
-/// Entspricht `discover(entries)` (Default-Modus, siehe Scope-Hinweis oben).
-pub fn discover(entries: &[Entry]) -> Analysis {
-    let stopwords = all_stopwords();
-
+/// Entspricht `discover(entries, stopwords=...)`. `stopwords` steuert die
+/// Sprachumschaltung (siehe `pipeline::stopwords::stopwords_for`).
+pub fn discover(entries: &[Entry], stopwords: &HashSet<&'static str>) -> Analysis {
     let mut analysis = Analysis::new();
     analysis.total_documents = entries.len();
 

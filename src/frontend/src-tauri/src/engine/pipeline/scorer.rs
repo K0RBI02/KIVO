@@ -157,7 +157,7 @@ mod tests {
         context.normalized_tokens = normalized_tokens;
 
         KeywordExtractor::new(analysis).execute(&mut context);
-        SearchStage::new(repo, Some(synonyms)).execute(&mut context);
+        SearchStage::new(repo, Some(synonyms), stopwords.clone()).execute(&mut context);
         Scorer::new(behavior).execute(&mut context);
         ResultBuilder::execute(&mut context);
 
@@ -171,7 +171,7 @@ mod tests {
     #[test]
     fn matches_python_end_to_end_scores_and_ranking() {
         let (repo, caddy_id, docker_id, fedora_id) = build_repo();
-        let analysis = discover(&repo.get_all());
+        let analysis = discover(&repo.get_all(), &all_stopwords());
         let synonyms = SynonymDictionary::new();
 
         // Konzept-Gewichte pruefen (4 Konzepte mit doc_freq=2 -> alle
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn behavior_bonus_can_reorder_close_results() {
         let (repo, _caddy_id, docker_id, _fedora_id) = build_repo();
-        let analysis = discover(&repo.get_all());
+        let analysis = discover(&repo.get_all(), &all_stopwords());
         let synonyms = SynonymDictionary::new();
 
         let mut behavior = BehaviorMemory::new();

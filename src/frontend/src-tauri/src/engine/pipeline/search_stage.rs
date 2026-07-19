@@ -11,7 +11,6 @@ use std::collections::HashSet;
 use crate::engine::pipeline::context::{Candidate, PipelineContext};
 use crate::engine::pipeline::fuzzy;
 use crate::engine::pipeline::normalizer;
-use crate::engine::pipeline::stopwords::all_stopwords;
 use crate::engine::pipeline::tokenizer;
 use crate::engine::repository::EntryRepository;
 use crate::engine::synonyms::SynonymDictionary;
@@ -26,11 +25,18 @@ pub struct SearchStage<'a> {
 }
 
 impl<'a> SearchStage<'a> {
-    pub fn new(repository: &'a EntryRepository, synonyms: Option<&'a SynonymDictionary>) -> Self {
+    /// `stopwords` entspricht dem `stopwords`-Konstruktorparameter im
+    /// Python-Original (steuert die Sprachumschaltung, siehe
+    /// `pipeline::stopwords::stopwords_for`).
+    pub fn new(
+        repository: &'a EntryRepository,
+        synonyms: Option<&'a SynonymDictionary>,
+        stopwords: HashSet<&'static str>,
+    ) -> Self {
         Self {
             repository,
             synonyms,
-            stopwords: all_stopwords(),
+            stopwords,
         }
     }
 
@@ -157,6 +163,7 @@ impl<'a> SearchStage<'a> {
 mod tests {
     use super::*;
     use crate::engine::entry::Entry;
+    use crate::engine::pipeline::stopwords::all_stopwords;
 
     fn build_repo() -> EntryRepository {
         let mut repo = EntryRepository::new();
@@ -188,7 +195,7 @@ mod tests {
         context.filtered_tokens = filtered_tokens;
         context.normalized_tokens = normalized_tokens;
 
-        let stage = SearchStage::new(repo, Some(synonyms));
+        let stage = SearchStage::new(repo, Some(synonyms), stopwords.clone());
         stage.execute(&mut context);
         context
     }

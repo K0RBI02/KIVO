@@ -17,6 +17,7 @@
 
 use std::collections::HashMap;
 use indexmap::IndexMap;
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::engine::entry::Entry;
@@ -33,7 +34,9 @@ pub struct Candidate {
 }
 
 /// Entspricht `SearchResult` aus result_builder.py.
-#[derive(Debug, Clone)]
+/// `Serialize` ist neu in Phase 5 - noetig, damit das direkt als
+/// Tauri-Command-Rueckgabewert ans Frontend geschickt werden kann.
+#[derive(Debug, Clone, Serialize)]
 pub struct SearchResult {
     pub entry: Entry,
     pub score: f64,
