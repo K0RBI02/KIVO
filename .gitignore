@@ -130,3 +130,5 @@ tempCodeRunnerFile.py
 # final gelöscht statt nur gestaged wurde.
 # ==========================================
 # src/engine/_legacy/
+
+src-tauri/gen/schemas/
