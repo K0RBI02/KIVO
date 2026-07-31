@@ -36,6 +36,8 @@
 // existiert - je nachdem, ob KIVO vorher schon einmal nativ gestartet
 // wurde.)
 
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::sync::Mutex;
 
 use tauri::Manager;
