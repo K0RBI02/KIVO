@@ -1,7 +1,18 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Pencil, Settings, ArrowLeft, X, Eye, FileText, Keyboard, Link2 } from "lucide-react";
+import { Pencil, Settings, ArrowLeft, X, Eye, FileText, Keyboard, Link2, Trash2 } from "lucide-react";
 import { marked } from "marked";
 import { api, ApiEntry, ApiSearchResult, ApiLanguageInfo } from "./api";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "./components/ui/alert-dialog";
 
 // ── Markdown config ───────────────────────────────────────────
 marked.setOptions({ breaks: true });
@@ -455,6 +466,7 @@ function DetailScreen({
   onBack,
   onEdit,
   onSettings,
+  onDeleted,
   searchRef,
 }: {
   entryId: string;
@@ -462,6 +474,7 @@ function DetailScreen({
   onBack: () => void;
   onEdit: () => void;
   onSettings: () => void;
+  onDeleted: () => void;
   searchRef: React.RefObject<HTMLInputElement | null>;
 }) {
   const [entry, setEntry] = useState<ApiEntry | null>(null);
@@ -498,6 +511,11 @@ function DetailScreen({
     setLinkQuery("");
     await refreshLinks();
   }, [entryId, refreshLinks]);
+
+  const handleDelete = useCallback(async () => {
+    await api.remove(entryId);
+    onDeleted();
+  }, [entryId, onDeleted]);
 
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -537,14 +555,35 @@ function DetailScreen({
 
   return (
     <div className="min-h-screen bg-[#fafaf8] px-5 sm:px-10 md:px-20 lg:px-40">
-      <div className="flex items-center gap-3 pt-10 pb-3 max-w-2xl mx-auto">
-        <button onClick={onBack} className="flex items-center justify-center w-10 h-10 -ml-2 rounded-full hover:bg-[#111110]/6 active:bg-[#111110]/10 transition-colors text-[#c8c8c4] hover:text-[#111110]" aria-label="Back (Esc)">
-          <ArrowLeft size={16} strokeWidth={1.5} />
-        </button>
-        <div className="flex-1">
-          <SearchBar value={query} onChange={setQuery} inputRef={searchRef} />
-        </div>
+    <div className="flex items-center gap-3 pt-10 pb-3 max-w-2xl mx-auto">
+      <button onClick={onBack} className="flex items-center justify-center w-10 h-10 -ml-2 rounded-full hover:bg-[#111110]/6 active:bg-[#111110]/10 transition-colors text-[#c8c8c4] hover:text-[#111110]" aria-label="Back (Esc)">
+        <ArrowLeft size={16} strokeWidth={1.5} />
+      </button>
+      <div className="flex-1">
+        <SearchBar value={query} onChange={setQuery} inputRef={searchRef} />
       </div>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <button className="flex items-center justify-center w-10 h-10 rounded-full hover:bg-[#d4183d]/10 active:bg-[#d4183d]/15 transition-colors text-[#c8c8c4] hover:text-[#d4183d]" aria-label="Eintrag löschen">
+            <Trash2 size={16} strokeWidth={1.5} />
+          </button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eintrag löschen?</AlertDialogTitle>
+            <AlertDialogDescription>
+              "{entry?.title}" wird unwiderruflich gelöscht. Das kann nicht rückgängig gemacht werden.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-[#d4183d] hover:bg-[#d4183d]/90">
+              Löschen
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
 
       {query.trim() && searchResults.length > 0 && (
         <div className="max-w-2xl mx-auto ml-10 sm:ml-12">
@@ -1193,6 +1232,7 @@ export default function App() {
           onBack={() => navigate({ type: "search" })}
           onEdit={() => navigate({ type: "edit", entryId: screen.entryId })}
           onSettings={() => navigate({ type: "settings" })}
+          onDeleted={() => navigate({ type: "search" })}
           searchRef={searchRef}
         />
       </FadeScreen>
