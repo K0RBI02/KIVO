@@ -13,6 +13,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "./components/ui/alert-dialog";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "./components/ui/context-menu";
+import { Bold, Italic, Code, List, Heading2, Link as LinkIcon } from "lucide-react";
+import kivoLogo from "./assets/icon.png";
+
 
 // ── Markdown config ───────────────────────────────────────────
 marked.setOptions({ breaks: true });
@@ -140,15 +150,8 @@ type Entry = ApiEntry;
 
 // ── Logo ─────────────────────────────────────────────────────
 
-function KivoIcon({ size = 32, color = "#111110" }: { size?: number; color?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="60 135 185 205" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path
-        d="M65,141.74148l2.28854,-1.79956c2.18344,-1.71793 3.33599,-1.80043 25.18694,-1.80043c17.85579,0 23.63674,-0.14417 25.49865,2.48569c0.98676,1.39396 0.87363,3.56612 0.87363,6.9516l0,5.9632l-5.42794,1.94287c-15.48226,5.54201 -29.18655,18.36736 -35.93666,33.63079c-14.85159,33.58278 7.39105,74.08158 44.78308,81.53866c9.5146,1.89785 18.6603,1.18048 28.96528,-2.2728c4.21644,-1.41241 7.94062,-2.5683 8.27585,-2.5683c0.33522,0 5.29627,5.17028 11.02425,11.48963c5.72873,6.31935 15.49608,16.97849 21.70571,23.68679c22.77532,24.60355 25.6588,27.98457 25.10299,29.43406c-0.47181,1.23004 -3.05373,1.39653 -21.63571,1.39653l-21.09958,0l-9.81615,-10.63908c-32.58996,-35.32247 -42.05689,-45.00582 -43.75912,-44.76177c-1.69467,0.24253 -1.76051,1.02763 -2.18199,25.99932c-0.4003,23.75301 -0.56262,25.89036 -2.08854,27.57519c-1.60349,1.76996 -2.37723,1.82634 -24.90647,1.82634l-23.25274,0l-1.79956,-2.28832c-1.79609,-2.28264 -1.80043,-2.52062 -1.80043,-95.03926zM159.69237,158.06609c-0.014,-0.2675 4.11238,-4.85935 9.16916,-10.20506l9.19299,-9.71955l28.5873,0c27.42952,0 28.6573,0.07035 30.32396,1.73703c2.11238,2.11224 2.12449,2.43445 0.21113,5.33616c-1.93418,2.93297 -45.50752,48.94601 -46.34975,48.94601c-0.34771,0 -2.42414,-3.5808 -4.6156,-7.95727c-4.62468,-9.23764 -12.93459,-18.70176 -21.23237,-24.17775c-2.89482,-1.91076 -5.27357,-3.69294 -5.28681,-3.95957zM108.68881,163.70447c3.64435,-1.73095 8.49606,-3.66077 10.78096,-4.28957c5.70338,-1.5677 19.48323,-1.54859 26.21272,0.03734c22.56987,5.32053 41.82419,29.51393 41.76328,52.47844c-0.02346,8.59102 -2.08173,16.60845 -6.40335,24.93235l-3.9005,7.51345l5.72609,5.9304c5.45859,5.65458 5.87364,5.90732 8.91792,5.42037c3.07871,-0.49262 3.40524,-0.27885 9.20435,6.0091c3.30648,3.58608 15.24069,16.06134 26.52032,27.72389c21.60242,22.33492 23.23693,24.60658 22.09239,30.71065c-0.69126,3.68181 -5.12336,8.89636 -8.9043,10.47601c-6.60501,2.75937 -13.00912,0.78169 -18.24221,-5.63415c-3.49906,-4.29135 -6.30195,-7.35871 -31.30467,-34.27063c-8.71815,-9.38255 -15.85022,-17.44425 -15.85022,-17.91379c0,-0.46993 0.44798,-1.83693 0.99508,-3.03898c0.89293,-1.95763 0.64434,-2.60462 -2.38821,-6.23877c-1.86153,-2.23004 -4.20735,-5.05186 -5.21379,-6.2713l-1.82899,-2.21643l-8.15894,4.09914c-17.08216,8.5827 -33.50635,8.86079 -50.26803,0.85207c-8.03631,-3.84072 -18.96309,-14.41889 -23.16496,-22.42761c-8.53404,-16.26566 -9.07078,-33.12534 -1.55377,-48.82194c4.56925,-9.54146 15.59592,-20.60888 24.96882,-25.06004zM94.76228,194.28743c5.28405,-11.1196 16.50013,-20.32579 28.0677,-23.039c5.35378,-1.25501 14.29251,-1.0935 19.8718,0.35955c7.51875,1.9585 13.25883,5.35022 19.27475,11.39073c18.14951,18.21951 15.84795,47.05236 -4.97921,62.38347c-22.54226,16.59483 -55.0724,5.80441 -64.22483,-21.30464c-1.56766,-4.64133 -1.83603,-7.08288 -1.57114,-14.28344c0.29009,-7.88879 0.61665,-9.31066 3.56093,-15.50667zM130.16107,178.5545c-0.57208,-0.68975 -0.76164,-1.70489 -0.42035,-2.25729c0.76277,-1.23429 7.62999,-0.48301 13.86005,1.51647c20.08936,6.44686 30.37543,30.18322 21.39582,49.37246c-3.34129,7.14077 -9.54941,13.28457 -17.25658,17.07913c-5.54221,2.72797 -6.32995,2.87477 -15.43024,2.87477c-9.05489,0 -9.90885,-0.15626 -15.29706,-2.80969c-3.13887,-1.54484 -7.65497,-4.75673 -10.0356,-7.13737c-4.87936,-4.88007 -10.08089,-14.63531 -9.67446,-18.14573c0.23189,-2.00643 0.61491,-2.27204 2.95211,-2.05071c3.5237,0.33371 4.37386,-0.9213 4.91832,-7.25731c0.5717,-6.64247 3.64171,-12.81238 8.69469,-17.47035c4.56074,-4.20357 6.29665,-5.2013 11.98717,-6.89143c3.29702,-0.97882 4.38859,-1.75634 4.80667,-3.41848c0.30042,-1.1994 0.0787,-2.70565 -0.50057,-3.40447z"
-        fill={color}
-      />
-    </svg>
-  );
+function KivoIcon({ size = 32 }: { size?: number }) {
+  return <img src={kivoLogo} alt="KIVO" width={size} height={size} />;
 }
 
 // ── Markdown renderer ─────────────────────────────────────────
@@ -816,6 +819,67 @@ function EditScreen({
     // sonst: normales Einfuegen, Browser macht das von selbst (kein preventDefault)
   }, [content]);
 
+  const applyFormat = useCallback((wrapper: string, blockPrefix?: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = content.slice(start, end);
+
+    let insertText: string;
+    let newStart: number;
+    let newEnd: number;
+
+    if (blockPrefix) {
+      // Zeilen-basierte Formatierung (Überschrift, Liste)
+      const lineStart = content.lastIndexOf("\n", start - 1) + 1;
+      const before = content.slice(0, lineStart);
+      const after = content.slice(lineStart);
+      const value = before + blockPrefix + after;
+      setContent(value);
+      requestAnimationFrame(() => {
+        const pos = start + blockPrefix.length;
+        textarea.setSelectionRange(pos, pos);
+        textarea.focus();
+      });
+      return;
+    }
+
+    if (selected) {
+      insertText = `${wrapper}${selected}${wrapper}`;
+      newStart = start + wrapper.length;
+      newEnd = newStart + selected.length;
+    } else {
+      insertText = `${wrapper}${wrapper}`;
+      newStart = start + wrapper.length;
+      newEnd = newStart;
+    }
+
+    const value = content.slice(0, start) + insertText + content.slice(end);
+    setContent(value);
+    requestAnimationFrame(() => {
+      textarea.setSelectionRange(newStart, newEnd);
+      textarea.focus();
+    });
+  }, [content]);
+
+  const applyLink = useCallback(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = content.slice(start, end) || "Linktext";
+    const insertText = `[${selected}](url)`;
+    const value = content.slice(0, start) + insertText + content.slice(end);
+    setContent(value);
+    requestAnimationFrame(() => {
+      const urlStart = start + selected.length + 3;
+      textarea.setSelectionRange(urlStart, urlStart + 3);
+      textarea.focus();
+    });
+  }, [content]);
+
   if (!loaded) {
     return <div className="min-h-screen bg-[#fafaf8]" />;
   }
@@ -865,15 +929,41 @@ function EditScreen({
               className="w-full bg-transparent outline-none text-[24px] sm:text-[26px] font-semibold text-[#111110] placeholder:text-[#c8c8c4] mb-5 min-h-[44px] flex-shrink-0"
               style={{ letterSpacing: "-0.02em", fontFamily: "'DM Sans', sans-serif" }}
             />
-            <textarea
-              ref={textareaRef}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              onPaste={handlePaste}
-              placeholder={"Write in Markdown…\n\n# Heading\n**bold**, *italic*, `code`\n- list item\n\nCode und Bilder kannst du einfach einfuegen (Strg/Cmd+V) - wird automatisch erkannt."}
-              className="w-full flex-1 min-h-0 bg-transparent outline-none text-[15px] sm:text-[16px] text-[#3d3d3a] placeholder:text-[#c8c8c4] leading-[1.75] resize-none overflow-y-auto pb-10"
-              style={{ fontFamily: "'DM Sans', sans-serif" }}
-            />
+            <ContextMenu>
+              <ContextMenuTrigger asChild>
+                <textarea
+                  ref={textareaRef}
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  onPaste={handlePaste}
+                  placeholder={"Write in Markdown…\n\n..."}
+                  className="w-full flex-1 min-h-0 bg-transparent outline-none text-[15px] sm:text-[16px] text-[#3d3d3a] placeholder:text-[#c8c8c4] leading-[1.75] resize-none overflow-y-auto pb-10"
+                  style={{ fontFamily: "'DM Sans', sans-serif" }}
+                />
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem onClick={() => applyFormat("**")}>
+                  <Bold className="mr-2 h-4 w-4" /> Fett
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => applyFormat("*")}>
+                  <Italic className="mr-2 h-4 w-4" /> Kursiv
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => applyFormat("`")}>
+                  <Code className="mr-2 h-4 w-4" /> Code
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem onClick={() => applyFormat("", "# ")}>
+                  <Heading2 className="mr-2 h-4 w-4" /> Überschrift
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => applyFormat("", "- ")}>
+                  <List className="mr-2 h-4 w-4" /> Liste
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem onClick={applyLink}>
+                  <LinkIcon className="mr-2 h-4 w-4" /> Link einfügen
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           </div>
         )}
       </div>
